@@ -1,25 +1,63 @@
-# Moodler (Mein Schatz)
+# 🧠 Moodler (Mein Schatz)
 
-## Was ist der Moodler?
+## 📘 Was ist der Moodler?
 
-Der Moodler nimmt automatisch deinen letzten Screenshot im "Bildschirmfotos" Ordner und leitet das bild an gpt-5 weiter. Dann ließt ChatGPT den Text aus dem Bild und gibt dir kurz die richtigen Antworten aus (zu 99%).
+Der **Moodler** nimmt automatisch deinen letzten Screenshot aus dem **„Bildschirmfotos“**-Ordner und leitet das Bild an **GPT-5** weiter.  
+ChatGPT liest den Text aus dem Screenshot aus und gibt dir **kurz die richtigen Antworten** aus (zu 99 %).
 
-## Setup
+---
 
-Zuerst muss man einen [API Key](https://platform.openai.com/api-keys) von Openai besorgen, danach eine neue .env Datei erstellen und folgendes einfügen: OPENAI_API_KEY=dein_api_key. Starte jetzt ein neues Terminal und begib dich in den Pfad, in der sich der Moodler befindet. Schreibe dann 
-```pip install -r requirements.txt``` um alle gebrauchten Module zu installieren. Führe dann die main.py datei aus, um den Moodler zu starten.
+## ⚙️ Setup
 
-## Verwendung
+1. Besorge dir einen [OpenAI API-Key](https://platform.openai.com/api-keys).  
+2. Erstelle eine neue Datei namens **`.env`** im Projektordner und füge Folgendes ein:
+   ```env
+   OPENAI_API_KEY=dein_api_key
+   ```
+3. Öffne ein Terminal im Projektverzeichnis und installiere alle Abhängigkeiten:
+   ```bash
+   pip install -r requirements.txt
+   ```
+4. Starte anschließend das Programm:
+   ```bash
+   python main.py
+   ```
 
-Zu Beginn sollte ein grüner Text auf der oberen linken Seite des Bildschirms mit den Worten "Waiting to read screenshot. Press ALT + R to load." erscheinen. Machen sie jetzt einen Screenshot von einer multiple-choice Frage und drücke alt + r. Der letzte Screenshot wird angezeigt und sie können mit alt + enter fortfahren. Danach wird ChatGPT das Bild verarbeiten und es wird ihnen nach kurzer Zeit die *richtige Lösung angezeigt. Drücken sie ein weiteres mal alt + enter und sie sind wieder am Start.
+---
 
-### Kann ich den Moodler für Schultests auf Moodle benutzen?
+## 🖥️ Verwendung
 
-Der Moodler ist nicht dafür gedacht, bei Schulprüfungen, Tests oder benoteten Moodle-Quizzes verwendet zu werden.
-Die Verwendung eines Quizlösers in solchen Kontexten kann als Täuschungsversuch oder Verstoß gegen Schul- bzw. Prüfungsordnungen gewertet werden.
-Das kann schulische Konsequenzen haben – bis hin zu Punktabzug, Note 6 oder Disziplinarmaßnahmen.
+Nach dem Start erscheint oben links ein grüner Text:
 
-Bitte verwende den Moodler nur zu Lern-, Übungs- oder Forschungszwecken – etwa, um eigene Quizze zu testen oder das Funktionsverhalten von Moodle besser zu verstehen.
+> **"Waiting to read screenshot. Press ALT + R to load."**
 
-💡 Hinweis: Die Nutzung erfolgt auf eigene Gefahr.
-*Die angezeigte Lösung wird von ChatGPT automatisch generiert und kann Fehler enthalten. Sie gilt daher nicht immer als garantiert richtig – bitte überprüfen Sie die Ergebnisse eigenständig.
+### 📸 Schritt-für-Schritt:
+
+1. Mache einen Screenshot einer **Multiple-Choice-Frage**.  
+2. Drücke **Alt + R** – der letzte Screenshot wird zu GPT-5 weitergeleitet.  
+3. Drücke **Alt + Enter**, um das Bild an ChatGPT zu senden.  
+4. Nach kurzer Zeit erscheint die *richtige Lösung*.  
+5. Drücke erneut **Alt + Enter**, um fortzufahren.
+
+---
+
+## ⚠️ Hinweis zu Moodle-Tests
+
+> ❌ **Der Moodler ist **nicht** für Schulprüfungen, Tests oder benotete Moodle-Quizzes gedacht!**
+
+Die Nutzung in solchen Kontexten kann als **Täuschungsversuch** gelten und **schulische Konsequenzen** haben  
+(z. B. Punktabzug, Note 5 oder Disziplinarmaßnahmen).
+
+✅ Verwende den Moodler **nur zu Lern-, Übungs- oder Forschungszwecken**, z. B.:
+- Zum Testen eigener Quizze  
+- Zum besseren Verständnis des Moodle-Systems
+
+---
+
+## ⚡ Haftungsausschluss
+
+💡 Die Nutzung erfolgt **auf eigene Gefahr**.  
+\*Die angezeigten Lösungen werden **automatisch generiert** und können **Fehler enthalten**.  
+Bitte überprüfe die Ergebnisse **eigenständig**.
+
+---

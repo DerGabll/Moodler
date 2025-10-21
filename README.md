@@ -2,7 +2,7 @@
 
 ## 📘 Was ist der Moodler?
 
-Der **Moodler** nimmt automatisch deinen letzten Screenshot aus dem **„Bildschirmfotos“**-Ordner und leitet das Bild an **GPT-5** weiter.  
+Mit dem **Moodler** kannst du einen Screenshot erstellen, der an **GPT-5** weiter geleitet wird.  
 ChatGPT liest den Text aus dem Screenshot aus und gibt dir **kurz die richtigen Antworten** aus (zu 99 %).
 
 ---

@@ -212,11 +212,28 @@ class ScreenshotSelector:
     def __init__(self):
         self.selector = tk.Toplevel(root)
         self.selector.attributes("-fullscreen", True)
-        self.selector.attributes("-alpha", 0.3)
+        self.selector.attributes("-alpha", 0.01)
         self.selector.configure(bg="black")
         self.selector.attributes("-topmost", True)
         
-        self.canvas = tk.Canvas(self.selector, highlightthickness=0, bg="black", cursor="crosshair")
+        # Mache das Fenster WIRKLICH immer oben
+        self.selector.update_idletasks()
+        selector_hwnd = self.selector.winfo_id()
+        
+        # Setze erweiterte Fenster-Styles
+        exstyle = win32gui.GetWindowLong(selector_hwnd, win32con.GWL_EXSTYLE)
+        exstyle |= win32con.WS_EX_TOPMOST
+        win32gui.SetWindowLong(selector_hwnd, win32con.GWL_EXSTYLE, exstyle)
+        
+        win32gui.SetWindowPos(
+            selector_hwnd,
+            win32con.HWND_TOPMOST,
+            0, 0, 0, 0,
+            win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_SHOWWINDOW
+        )
+        
+        # Cursor auf normal geändert (von crosshair)
+        self.canvas = tk.Canvas(self.selector, highlightthickness=0, bg="black", cursor="arrow")
         self.canvas.pack(fill="both", expand=True)
         
         self.start_x = None
@@ -230,6 +247,34 @@ class ScreenshotSelector:
         
         # Bind escape key to cancel
         self.selector.bind("<Escape>", self.cancel)
+        
+        # Aktiviere aggressives topmost
+        self.keep_selector_on_top()
+
+    def keep_selector_on_top(self):
+        """Stelle AGGRESSIV sicher, dass das Selector-Fenster immer oben bleibt"""
+        try:
+            if not self.selector.winfo_exists():
+                return
+                
+            selector_hwnd = self.selector.winfo_id()
+            
+            # Bringe das Fenster nach vorne
+            win32gui.BringWindowToTop(selector_hwnd)
+            win32gui.SetForegroundWindow(selector_hwnd)
+            
+            # Setze es auf topmost
+            win32gui.SetWindowPos(
+                selector_hwnd,
+                win32con.HWND_TOPMOST,
+                0, 0, 0, 0,
+                win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_NOACTIVATE | win32con.SWP_SHOWWINDOW
+            )
+            
+            # Wiederhole alle 50ms (noch häufiger für mehr Aggressivität)
+            self.selector.after(50, self.keep_selector_on_top)
+        except:
+            pass
         
     def on_press(self, event):
         self.start_x = event.x

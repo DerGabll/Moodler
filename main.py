@@ -13,7 +13,7 @@ import keyboard
 # --- CONFIG ---
 load_dotenv(override=True)
 SCREENSHOT_PATH = r"C:\Users\hudi\Pictures\Screenshots\*"
-PROMPT_TEXT = "Welche der Antwortmöglichkeiten sind richtig (Es können mehrere richtig sein, aber es kann auch nur 1 sein). Antworte kurz"
+PROMPT_TEXT = "Welche Antwortmöglichkeiten sind richtig? Es kann eine oder mehrere richtige geben. Schreibe nur richtige antworten kurz auf, zum Beispiel: a: 'Beschreibung von a'"
 client = OpenAI()
 
 # --- STATE ---
@@ -157,9 +157,9 @@ def on_enter_pressed():
 
 # --- Register global hotkeys ---
 try:
-    keyboard.add_hotkey("ctrl+r", on_r_pressed)
-    keyboard.add_hotkey("ctrl+enter", on_enter_pressed)
-    keyboard.add_hotkey("ctrl+q", lambda: (keyboard.unhook_all_hotkeys(), root.destroy()))
+    keyboard.add_hotkey("alt+r", on_r_pressed)
+    keyboard.add_hotkey("alt+enter", on_enter_pressed)
+    keyboard.add_hotkey("alt+q", lambda: (keyboard.unhook_all_hotkeys(), root.destroy()))
 except Exception as e:
     update_label(f"Keyboard hook error: {e}\nRun as admin if needed.")
 

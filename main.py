@@ -295,7 +295,7 @@ class ScreenshotSelector:
     def on_release(self, event):
         end_x, end_y = event.x, event.y
         
-        # Normalize coordinates (start should be top-left, end should be bottom-right)
+        # Normalize coordinates
         x1 = min(self.start_x, end_x)
         y1 = min(self.start_y, end_y)
         x2 = max(self.start_x, end_x)
@@ -306,8 +306,33 @@ class ScreenshotSelector:
             self.cancel()
             return
         
-        # Speichere die Koordinaten für später
-        self.final_coords = (x1, y1, x2, y2)
+        # Hole die DPI-Skalierung
+        try:
+            import ctypes
+            user32 = ctypes.windll.user32
+            user32.SetProcessDPIAware()
+            
+            # Hole den primären Monitor Handle
+            hMonitor = user32.MonitorFromPoint(ctypes.wintypes.POINT(int(x1), int(y1)), 2)
+            
+            # Hole die DPI-Skalierung
+            shcore = ctypes.windll.shcore
+            dpiX = ctypes.c_uint()
+            dpiY = ctypes.c_uint()
+            shcore.GetDpiForMonitor(hMonitor, 0, ctypes.byref(dpiX), ctypes.byref(dpiY))
+            
+            scale_factor = dpiX.value / 96.0  # 96 DPI = 100% Skalierung
+        except:
+            scale_factor = 1.0
+        
+        # Skaliere die Koordinaten
+        x1_scaled = int(x1 * scale_factor)
+        y1_scaled = int(y1 * scale_factor)
+        x2_scaled = int(x2 * scale_factor)
+        y2_scaled = int(y2 * scale_factor)
+        
+        # Speichere die skalierten Koordinaten
+        self.final_coords = (x1_scaled, y1_scaled, x2_scaled, y2_scaled)
         
         # Entferne alle visuellen Elemente
         for line in self.crosshairs:
@@ -318,16 +343,16 @@ class ScreenshotSelector:
         if hasattr(self, 'size_text'):
             self.canvas.delete(self.size_text)
         
-        # Verstecke das Overlay komplett
+        # Verstecke das Overlay
         self.selector.withdraw()
         
-        # Warte einen Moment und mache dann den Screenshot
+        # Screenshot mit Verzögerung
         root.after(250, self.take_screenshot)
 
     def take_screenshot(self):
         x1, y1, x2, y2 = self.final_coords
         
-        # Bei Fullscreen entsprechen Canvas-Koordinaten den Bildschirm-Koordinaten
+        # Screenshot mit den skalierten Koordinaten
         screenshot = ImageGrab.grab(bbox=(x1, y1, x2, y2))
         
         # Save to temporary file
@@ -337,13 +362,14 @@ class ScreenshotSelector:
         # Clean up
         self.selector.destroy()
         
-        # Update state with the selected screenshot
+        # Update state
         state["screenshot_path"] = temp_path
         state["screenshot_loaded"] = True
         state["selecting_area"] = False
         width = abs(x2 - x1)
         height = abs(y2 - y1)
         update_label(f"Screenshot ready ({width}x{height})\n(ALT+T) screenshot | (ALT+ENTER) send | (ALT+R) reset API key")    
+    
     def cancel(self, event=None):
         # Entferne Kreuzlinien
         for line in self.crosshairs:

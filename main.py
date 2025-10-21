@@ -14,24 +14,12 @@ import json
 import getpass
 
 # --- CONFIG ---
-SNEAKY_LAYOUT = True
 username = getpass.getuser()
 SCREENSHOT_PATH = rf"C:\Users\{username}\Pictures\Screenshots\*"
 
-if not SNEAKY_LAYOUT:
-    PROMPT_TEXT = """Welche Antwortmöglichkeiten sind richtig? Es kann eine oder mehrere richtige geben. Antworte kurz mit den richtigen Antworten und gebe 2 Anfangswörter und den Buchstaben. Eine Antwort könnte zum Beispiel sein: " \
-    a. Um komplexe
-    c. Zur Analyse
-
-    Dies ist nur ein Beispiellayout. Lese dir die Angabe immer genau durch. Denke mehrmals über deine Antwort nach
-    """
-else:
-    PROMPT_TEXT = """Welche Antwortmöglichkeiten sind richtig? Es kann eine oder mehrere richtige geben. Antworte kurz mit den richtigen Antworten und gebe 2 Anfangswörter und den Buchstaben. Eine Antwort könnte zum Beispiel sein: " \
-    a. Um komplexe
-    c. Zur Analyse
-
-    Dies ist nur ein Beispiellayout. Lese dir die Angabe immer genau durch. Denke mehrmals über deine Antwort nach
-    """   
+PROMPT_TEXT = """
+Welche Antwortmöglichkeiten, glaubst du, sind richtig? Die Antwortmöglichkeiten sind mit Buchstaben geordnet. Schreibe in deiner Antwort nur Buchstaben mit einem Leerzeichen getrennt und nur Buchstaben, die die richtige Lösung beinhalten. Die Antwort sollte gut durchgedacht sein.
+"""   
 
 # --- API Key Management ---
 def get_config_path():
@@ -357,7 +345,9 @@ def get_latest_screenshot():
     return max(files, key=os.path.getctime)
 
 def start_area_selection():
-    if state["selecting_area"] or state["sending"]:
+    # Verhindere Screenshot-Auswahl während des Sendens, bei aktiver Auswahl
+    # ODER wenn bereits eine Antwort angezeigt wird
+    if state["selecting_area"] or state["sending"] or state["response_shown"]:
         return
     
     state["selecting_area"] = True

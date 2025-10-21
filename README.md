@@ -10,15 +10,11 @@ ChatGPT liest den Text aus dem Screenshot aus und gibt dir **kurz die richtigen 
 ## ⚙️ Setup
 
 1. Besorge dir einen [OpenAI API-Key](https://platform.openai.com/api-keys).  
-2. Erstelle eine neue Datei namens **`.env`** im Projektordner und füge Folgendes ein:
-   ```env
-   OPENAI_API_KEY=dein_api_key
-   ```
-3. Öffne ein Terminal im Projektverzeichnis und installiere alle Abhängigkeiten:
+2. Öffne ein Terminal im Projektverzeichnis und installiere alle Abhängigkeiten:
    ```bash
    pip install -r requirements.txt
    ```
-4. Starte anschließend das Programm:
+3. Starte anschließend das Programm:
    ```bash
    python main.py
    ```

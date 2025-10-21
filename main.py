@@ -2,17 +2,17 @@ import os
 import glob
 import base64
 import threading
-from dotenv import load_dotenv
-from openai import OpenAI
 import tkinter as tk
+from tkinter import simpledialog, messagebox
 import win32gui
 import win32con
 import win32api
 import keyboard
 from PIL import ImageGrab
+from openai import OpenAI
+import json
 
 # --- CONFIG ---
-load_dotenv(override=True)
 SNEAKY_LAYOUT = True
 SCREENSHOT_PATH = r"C:\Users\hudi\Pictures\Screenshots\*"
 
@@ -29,7 +29,88 @@ else:
 
     Dies ist nur ein Beispiellayout. Lese dir die Angabe immer genau durch und ignoriere, ob bei einer antwortmöglichkeit richtig oder falsch daneben steht.
     """   
-client = OpenAI()
+
+# --- API Key Management ---
+def get_config_path():
+    """Get path for config file in user's appdata directory"""
+    appdata_path = os.getenv('APPDATA')
+    config_dir = os.path.join(appdata_path, "ScreenshotAI")
+    os.makedirs(config_dir, exist_ok=True)
+    return os.path.join(config_dir, "config.json")
+
+def load_saved_api_key():
+    """Load API key from config file"""
+    config_path = get_config_path()
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+                return config.get('api_key')
+        except:
+            return None
+    return None
+
+def save_api_key(api_key):
+    """Save API key to config file"""
+    config_path = get_config_path()
+    config = {'api_key': api_key}
+    try:
+        with open(config_path, 'w') as f:
+            json.dump(config, f)
+        return True
+    except:
+        return False
+
+def is_valid_api_key(api_key):
+    """Check if API key looks valid (starts with sk- and has reasonable length)"""
+    if not api_key:
+        return False
+    if not api_key.startswith('sk-'):
+        return False
+    if len(api_key) < 10:  # Minimum reasonable length for an API key
+        return False
+    return True
+
+def get_api_key():
+    """Get API key from saved config or user input"""
+    # First try to load saved API key
+    saved_api_key = load_saved_api_key()
+    if saved_api_key and is_valid_api_key(saved_api_key):
+        return saved_api_key
+    
+    # If no valid saved key, ask user
+    root = tk.Tk()
+    root.withdraw()  # Hide the main window
+    
+    while True:
+        api_key = simpledialog.askstring(
+            "OpenAI API Key Required", 
+            "Enter your OpenAI API key (starts with sk-...):",
+            show='*'  # This hides the input (shows asterisks)
+        )
+        
+        if not api_key:
+            messagebox.showerror("Error", "API key is required to use this application.")
+            root.destroy()
+            return None
+        
+        if is_valid_api_key(api_key):
+            # Save the valid API key
+            if save_api_key(api_key):
+                messagebox.showinfo("Success", "API key saved successfully!")
+            break
+        else:
+            messagebox.showerror("Invalid API Key", "API key must start with 'sk-' and be valid. Please try again.")
+    
+    root.destroy()
+    return api_key
+
+# Initialize OpenAI client
+api_key = get_api_key()
+if not api_key:
+    exit()
+
+client = OpenAI(api_key=api_key)
 
 # --- STATE ---
 state = {
@@ -50,7 +131,7 @@ root.geometry("300x40+10+10")
 
 label = tk.Label(
     root,
-    text="(ALT+T) screenshot | (ALT+ENTER) send",
+    text="(ALT+T) screenshot | (ALT+ENTER) send | (ALT+R) reset API key",
     fg="lime",
     bg="black",
     font=("Consolas", 12),
@@ -102,6 +183,38 @@ def update_label(text: str):
             label.config(wraplength=max_w - 10)
         root.geometry(f"{w}x{h}+10+10")
     root.after(0, do_update)
+
+# --- Reset API Key ---
+def reset_api_key():
+    """Allow user to reset the saved API key"""
+    if state["sending"] or state["selecting_area"]:
+        return
+        
+    temp_root = tk.Tk()
+    temp_root.withdraw()
+    
+    result = messagebox.askyesno(
+        "Reset API Key",
+        "Do you want to reset the saved API key? The application will close and you'll need to restart it."
+    )
+    
+    if result:
+        config_path = get_config_path()
+        try:
+            if os.path.exists(config_path):
+                os.remove(config_path)
+            messagebox.showinfo("Success", "API key reset. The application will now close.")
+            temp_root.destroy()
+            # Properly shutdown the application
+            keyboard.unhook_all_hotkeys()
+            root.quit()
+            root.destroy()
+            exit(0)
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to reset API key: {e}")
+            temp_root.destroy()
+    else:
+        temp_root.destroy()
 
 # --- Screenshot selection overlay ---
 class ScreenshotSelector:
@@ -166,12 +279,12 @@ class ScreenshotSelector:
         state["screenshot_path"] = temp_path
         state["screenshot_loaded"] = True
         state["selecting_area"] = False
-        update_label(f"Screenshot ready\n(ALT+T) screenshot | (ALT+ENTER) send")
+        update_label(f"Screenshot ready\n(ALT+T) screenshot | (ALT+ENTER) send | (ALT+R) reset API key")
     
     def cancel(self, event=None):
         self.selector.destroy()
         state["selecting_area"] = False
-        update_label("(ALT+T) screenshot | (ALT+ENTER) send")
+        update_label("(ALT+T) screenshot | (ALT+ENTER) send | (ALT+R) reset API key")
 
 # --- Screenshot helpers ---
 def get_latest_screenshot():
@@ -235,18 +348,19 @@ def on_enter_pressed():
             "response_shown": False,
             "sending": False
         })
-        update_label("(ALT+T) screenshot | (ALT+ENTER) send")
+        update_label("(ALT+T) screenshot | (ALT+ENTER) send | (ALT+R) reset API key")
 
 # --- Register global hotkeys ---
 try:
     keyboard.add_hotkey("alt+t", start_area_selection)  # Start area selection
     keyboard.add_hotkey("alt+enter", on_enter_pressed)  # Send or continue
+    keyboard.add_hotkey("alt+r", reset_api_key)  # Reset API key
     keyboard.add_hotkey("alt+q", lambda: (keyboard.unhook_all_hotkeys(), root.destroy()))  # Quit
 except Exception as e:
     update_label(f"Keyboard hook error: {e}\nRun as admin if needed.")
 
 # --- Start ---
-update_label("(ALT+T) screenshot | (ALT+ENTER) send")
+update_label("(ALT+T) screenshot | (ALT+ENTER) send | (ALT+R) reset API key")
 
 try:
     root.mainloop()

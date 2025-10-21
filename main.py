@@ -306,27 +306,29 @@ class ScreenshotSelector:
             self.cancel()
             return
         
-        # Entferne Kreuzlinien
+        # Speichere die Koordinaten für später
+        self.final_coords = (x1, y1, x2, y2)
+        
+        # Entferne alle visuellen Elemente
         for line in self.crosshairs:
             self.canvas.delete(line)
         self.crosshairs = []
+        if hasattr(self, 'rect'):
+            self.canvas.delete(self.rect)
+        if hasattr(self, 'size_text'):
+            self.canvas.delete(self.size_text)
         
-        # WICHTIG: Konvertiere Canvas-Koordinaten zu Bildschirm-Koordinaten
-        screen_x1 = self.selector.winfo_rootx() + x1
-        screen_y1 = self.selector.winfo_rooty() + y1
-        screen_x2 = self.selector.winfo_rootx() + x2
-        screen_y2 = self.selector.winfo_rooty() + y2
-        
-        # Verstecke das Overlay BEVOR der Screenshot gemacht wird
+        # Verstecke das Overlay komplett
         self.selector.withdraw()
-        self.selector.update()
         
-        # Kurze Verzögerung damit das Overlay wirklich weg ist
-        import time
-        time.sleep(0.1)
+        # Warte einen Moment und mache dann den Screenshot
+        root.after(250, self.take_screenshot)
+
+    def take_screenshot(self):
+        x1, y1, x2, y2 = self.final_coords
         
-        # Take screenshot of selected area mit den korrigierten Koordinaten
-        screenshot = ImageGrab.grab(bbox=(screen_x1, screen_y1, screen_x2, screen_y2))
+        # Bei Fullscreen entsprechen Canvas-Koordinaten den Bildschirm-Koordinaten
+        screenshot = ImageGrab.grab(bbox=(x1, y1, x2, y2))
         
         # Save to temporary file
         temp_path = os.path.join(os.environ['TEMP'], "selected_screenshot.png")
@@ -339,8 +341,9 @@ class ScreenshotSelector:
         state["screenshot_path"] = temp_path
         state["screenshot_loaded"] = True
         state["selecting_area"] = False
-        update_label(f"Screenshot ready ({abs(x2-x1)}x{abs(y2-y1)})\n(ALT+T) screenshot | (ALT+ENTER) send | (ALT+R) reset API key")
-    
+        width = abs(x2 - x1)
+        height = abs(y2 - y1)
+        update_label(f"Screenshot ready ({width}x{height})\n(ALT+T) screenshot | (ALT+ENTER) send | (ALT+R) reset API key")    
     def cancel(self, event=None):
         # Entferne Kreuzlinien
         for line in self.crosshairs:

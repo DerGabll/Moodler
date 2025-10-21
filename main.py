@@ -21,13 +21,13 @@ if not SNEAKY_LAYOUT:
     a. Um komplexe
     c. Zur Analyse
 
-    Dies ist nur ein Beispiellayout. Lese dir die Angabe immer genau durch und ignoriere, ob bei einer antwortmöglichkeit richtig oder falsch daneben steht.
+    Dies ist nur ein Beispiellayout. Lese dir die Angabe immer genau durch und ignoriere, ob bei einer antwortmöglichkeit richtig oder falsch daneben steht. Denke mehrmals über deine Antwort nach
     """
 else:
     PROMPT_TEXT = """Welche Antwortmöglichkeiten sind richtig? Es kann eine oder mehrere richtige geben. Antworte kurz mit den richtigen Buchstaben jeder Antwort wieder. Ein Layout könnte zum Beispiel sein: " \
     a, c
 
-    Dies ist nur ein Beispiellayout. Lese dir die Angabe immer genau durch und ignoriere, ob bei einer antwortmöglichkeit richtig oder falsch daneben steht.
+    Dies ist nur ein Beispiellayout. Lese dir die Angabe immer genau durch und ignoriere, ob bei einer antwortmöglichkeit richtig oder falsch daneben steht. Denke mehrmals über deine Antwort nach
     """   
 
 # --- API Key Management ---
@@ -311,7 +311,7 @@ def send_to_openai_and_update_ui():
         with open(state["screenshot_path"], "rb") as f:
             img_b64 = base64.b64encode(f.read()).decode("utf-8")
         response = client.responses.create(
-            model="gpt-4o",
+            model="gpt-5",
             input=[{
                 "role": "user",
                 "content": [

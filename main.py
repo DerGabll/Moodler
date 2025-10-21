@@ -311,8 +311,22 @@ class ScreenshotSelector:
             self.canvas.delete(line)
         self.crosshairs = []
         
-        # Take screenshot of selected area
-        screenshot = ImageGrab.grab(bbox=(x1, y1, x2, y2))
+        # WICHTIG: Konvertiere Canvas-Koordinaten zu Bildschirm-Koordinaten
+        screen_x1 = self.selector.winfo_rootx() + x1
+        screen_y1 = self.selector.winfo_rooty() + y1
+        screen_x2 = self.selector.winfo_rootx() + x2
+        screen_y2 = self.selector.winfo_rooty() + y2
+        
+        # Verstecke das Overlay BEVOR der Screenshot gemacht wird
+        self.selector.withdraw()
+        self.selector.update()
+        
+        # Kurze Verzögerung damit das Overlay wirklich weg ist
+        import time
+        time.sleep(0.1)
+        
+        # Take screenshot of selected area mit den korrigierten Koordinaten
+        screenshot = ImageGrab.grab(bbox=(screen_x1, screen_y1, screen_x2, screen_y2))
         
         # Save to temporary file
         temp_path = os.path.join(os.environ['TEMP'], "selected_screenshot.png")
@@ -364,7 +378,7 @@ def send_to_openai_and_update_ui():
         with open(state["screenshot_path"], "rb") as f:
             img_b64 = base64.b64encode(f.read()).decode("utf-8")
         response = client.responses.create(
-            model="gpt-4o-mini",
+            model="gpt-5",
             input=[{
                 "role": "user",
                 "content": [

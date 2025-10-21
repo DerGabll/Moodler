@@ -13,7 +13,7 @@ import keyboard
 # --- CONFIG ---
 load_dotenv(override=True)
 SCREENSHOT_PATH = r"C:\Users\hudi\Pictures\Screenshots\*"
-PROMPT_TEXT = "Welche Antwortmöglichkeiten sind richtig? Es kann eine oder mehrere richtige geben. Schreibe nur richtige antworten kurz auf, zum Beispiel: a: 'Beschreibung von a'"
+PROMPT_TEXT = "Welche Antwortmöglichkeiten sind richtig? Es kann eine oder mehrere richtige geben. Antworte kurz mit den richtigen Antworten."
 client = OpenAI()
 
 # --- STATE ---

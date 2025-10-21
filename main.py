@@ -11,23 +11,25 @@ import keyboard
 from PIL import ImageGrab
 from openai import OpenAI
 import json
+import getpass
 
 # --- CONFIG ---
 SNEAKY_LAYOUT = True
-SCREENSHOT_PATH = r"C:\Users\hudi\Pictures\Screenshots\*"
+username = getpass.getuser()
+SCREENSHOT_PATH = rf"C:\Users\{username}\Pictures\Screenshots\*"
 
 if not SNEAKY_LAYOUT:
-    PROMPT_TEXT = """Welche Antwortmöglichkeiten sind richtig? Es kann eine oder mehrere richtige geben. Antworte kurz mit den richtigen Antworten und gebe 2 Anfangswörter und den Buchstaben jeder Antwort wieder. Ein Layout könnte zum Beispiel sein: " \
+    PROMPT_TEXT = """Welche Antwortmöglichkeiten sind richtig? Es kann eine oder mehrere richtige geben. Antworte kurz mit den richtigen Antworten und gebe 2 Anfangswörter und den Buchstaben. Eine Antwort könnte zum Beispiel sein: " \
     a. Um komplexe
     c. Zur Analyse
 
-    Dies ist nur ein Beispiellayout. Lese dir die Angabe immer genau durch und ignoriere, ob bei einer antwortmöglichkeit richtig oder falsch daneben steht. Denke mehrmals über deine Antwort nach
+    Dies ist nur ein Beispiellayout. Lese dir die Angabe immer genau durch. Denke mehrmals über deine Antwort nach
     """
 else:
-    PROMPT_TEXT = """Welche Antwortmöglichkeiten sind richtig? Es kann eine oder mehrere richtige geben. Antworte kurz mit den richtigen Buchstaben jeder Antwort wieder. Ein Layout könnte zum Beispiel sein: " \
+    PROMPT_TEXT = """Welche Antwortmöglichkeiten sind richtig? Es kann eine oder mehrere richtige geben. Antworte kurz mit den richtigen Buchstaben. Eine Antwort könnte zum Beispiel sein: " \
     a, c
 
-    Dies ist nur ein Beispiellayout. Lese dir die Angabe immer genau durch und ignoriere, ob bei einer antwortmöglichkeit richtig oder falsch daneben steht. Denke mehrmals über deine Antwort nach
+    Dies ist nur ein Beispiellayout. Lese dir die Angabe immer genau durch. Denke mehrmals über deine Antwort nach
     """   
 
 # --- API Key Management ---

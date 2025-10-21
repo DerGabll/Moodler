@@ -26,8 +26,9 @@ if not SNEAKY_LAYOUT:
     Dies ist nur ein Beispiellayout. Lese dir die Angabe immer genau durch. Denke mehrmals über deine Antwort nach
     """
 else:
-    PROMPT_TEXT = """Welche Antwortmöglichkeiten sind richtig? Es kann eine oder mehrere richtige geben. Antworte kurz mit den richtigen Buchstaben. Eine Antwort könnte zum Beispiel sein: " \
-    a, c
+    PROMPT_TEXT = """Welche Antwortmöglichkeiten sind richtig? Es kann eine oder mehrere richtige geben. Antworte kurz mit den richtigen Antworten und gebe 2 Anfangswörter und den Buchstaben. Eine Antwort könnte zum Beispiel sein: " \
+    a. Um komplexe
+    c. Zur Analyse
 
     Dies ist nur ein Beispiellayout. Lese dir die Angabe immer genau durch. Denke mehrmals über deine Antwort nach
     """   
@@ -223,16 +224,17 @@ class ScreenshotSelector:
     def __init__(self):
         self.selector = tk.Toplevel(root)
         self.selector.attributes("-fullscreen", True)
-        self.selector.attributes("-alpha", 0.01)  # Almost completely transparent
+        self.selector.attributes("-alpha", 0.3)
         self.selector.configure(bg="black")
         self.selector.attributes("-topmost", True)
         
-        self.canvas = tk.Canvas(self.selector, highlightthickness=0, bg="black")
+        self.canvas = tk.Canvas(self.selector, highlightthickness=0, bg="black", cursor="crosshair")
         self.canvas.pack(fill="both", expand=True)
         
         self.start_x = None
         self.start_y = None
         self.rect = None
+        self.crosshairs = []
         
         self.canvas.bind("<ButtonPress-1>", self.on_press)
         self.canvas.bind("<B1-Motion>", self.on_drag)
@@ -244,14 +246,63 @@ class ScreenshotSelector:
     def on_press(self, event):
         self.start_x = event.x
         self.start_y = event.y
+        # Entferne Info-Text wenn Auswahl beginnt
+        self.canvas.delete("info")
+        
+        # Zeichne Rechteck mit sehr gut sichtbarer Umrandung
         self.rect = self.canvas.create_rectangle(
             self.start_x, self.start_y, self.start_x, self.start_y,
-            outline="red", width=2, fill=""
+            outline="#FF0000",  # Knalliges Rot für maximale Sichtbarkeit
+            width=3,           # Dicke Linie
+            fill="",           # Keine Füllung
+            dash=(10, 5)       # Längere gestrichelte Linie
         )
+        
+        # Erstelle Kreuzlinien für bessere Orientierung
+        self.create_crosshairs(event.x, event.y)
+        
+        # Größen-Anzeige
+        self.size_text = self.canvas.create_text(
+            self.start_x, self.start_y - 25,
+            text="0 x 0",
+            fill="#FF0000",
+            font=("Arial", 11, "bold"),
+            tags="size"
+        )
+    
+    def create_crosshairs(self, x, y):
+        # Entferne alte Kreuzlinien
+        for line in self.crosshairs:
+            self.canvas.delete(line)
+        self.crosshairs = []
+        
+        # Horizontale Linie über gesamten Bildschirm
+        self.crosshairs.append(self.canvas.create_line(
+            0, y, self.canvas.winfo_width(), y,
+            fill="#FF0000", width=1, dash=(2, 2)
+        ))
+        
+        # Vertikale Linie über gesamten Bildschirm
+        self.crosshairs.append(self.canvas.create_line(
+            x, 0, x, self.canvas.winfo_height(),
+            fill="#FF0000", width=1, dash=(2, 2)
+        ))
     
     def on_drag(self, event):
         if self.rect:
             self.canvas.coords(self.rect, self.start_x, self.start_y, event.x, event.y)
+            
+            # Aktualisiere Kreuzlinien
+            self.create_crosshairs(event.x, event.y)
+            
+            # Aktualisiere Größen-Anzeige
+            width = abs(event.x - self.start_x)
+            height = abs(event.y - self.start_y)
+            mid_x = min(self.start_x, event.x) + width/2
+            mid_y = min(self.start_y, event.y) - 20
+            
+            self.canvas.coords(self.size_text, mid_x, mid_y)
+            self.canvas.itemconfig(self.size_text, text=f"{width} × {height}")
     
     def on_release(self, event):
         end_x, end_y = event.x, event.y
@@ -267,6 +318,11 @@ class ScreenshotSelector:
             self.cancel()
             return
         
+        # Entferne Kreuzlinien
+        for line in self.crosshairs:
+            self.canvas.delete(line)
+        self.crosshairs = []
+        
         # Take screenshot of selected area
         screenshot = ImageGrab.grab(bbox=(x1, y1, x2, y2))
         
@@ -281,9 +337,14 @@ class ScreenshotSelector:
         state["screenshot_path"] = temp_path
         state["screenshot_loaded"] = True
         state["selecting_area"] = False
-        update_label(f"Screenshot ready\n(ALT+T) screenshot | (ALT+ENTER) send | (ALT+R) reset API key")
+        update_label(f"Screenshot ready ({abs(x2-x1)}x{abs(y2-y1)})\n(ALT+T) screenshot | (ALT+ENTER) send | (ALT+R) reset API key")
     
     def cancel(self, event=None):
+        # Entferne Kreuzlinien
+        for line in self.crosshairs:
+            self.canvas.delete(line)
+        self.crosshairs = []
+        
         self.selector.destroy()
         state["selecting_area"] = False
         update_label("(ALT+T) screenshot | (ALT+ENTER) send | (ALT+R) reset API key")
@@ -313,7 +374,7 @@ def send_to_openai_and_update_ui():
         with open(state["screenshot_path"], "rb") as f:
             img_b64 = base64.b64encode(f.read()).decode("utf-8")
         response = client.responses.create(
-            model="gpt-5",
+            model="gpt-4o-mini",
             input=[{
                 "role": "user",
                 "content": [

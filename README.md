@@ -23,17 +23,13 @@ ChatGPT liest den Text aus dem Screenshot aus und gibt dir **kurz die richtigen 
 
 ## 🖥️ Verwendung
 
-Nach dem Start erscheint oben links ein grüner Text:
-
-> **"Waiting to read screenshot. Press ALT + R to load."**
+Nach dem Start erscheint oben links ein grüner Text.
 
 ### 📸 Schritt-für-Schritt:
 
-1. Mache einen Screenshot einer **Multiple-Choice-Frage**.  
-2. Drücke **Alt + R** – der letzte Screenshot wird zu GPT-5 weitergeleitet.  
-3. Drücke **Alt + Enter**, um das Bild an ChatGPT zu senden.  
-4. Nach kurzer Zeit erscheint die *richtige Lösung*.  
-5. Drücke erneut **Alt + Enter**, um fortzufahren.
+1. Mache einen Screenshot einer **Multiple-Choice-Frage** mit ALT+T. Dieser Screenshot wird aus komischen Gründen nirgends angezeigt.
+2. Drücke **Alt + Enter** - dieser Screenshot wird von GPT-5 bearbeitet und es wird eine Antwort oben links ausgegeben  
+3. Drücke erneut **Alt + Enter**, um fortzufahren.
 
 ---
 
@@ -42,7 +38,7 @@ Nach dem Start erscheint oben links ein grüner Text:
 > ❌ **Der Moodler ist **nicht** für Schulprüfungen, Tests oder benotete Moodle-Quizzes gedacht!**
 
 Die Nutzung in solchen Kontexten kann als **Täuschungsversuch** gelten und **schulische Konsequenzen** haben  
-(z. B. Punktabzug, Note 5 oder Disziplinarmaßnahmen).
+(z. B. Punktabzug, Note 5, Disziplinarmaßnahmen sowie Fuckass-Syndrom).
 
 ✅ Verwende den Moodler **nur zu Lern-, Übungs- oder Forschungszwecken**, z. B.:
 - Zum Testen eigener Quizze  

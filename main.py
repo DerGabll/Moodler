@@ -216,11 +216,14 @@ class ScreenshotSelector:
         self.selector.configure(bg="black")
         self.selector.attributes("-topmost", True)
         
-        # Mache das Fenster WIRKLICH immer oben
+        # Get DPI scaling factor FIRST
+        self.scale_factor = self.get_system_scale_factor()
+        
+        # Make window truly topmost
         self.selector.update_idletasks()
         selector_hwnd = self.selector.winfo_id()
         
-        # Setze erweiterte Fenster-Styles
+        # Set extended window styles
         exstyle = win32gui.GetWindowLong(selector_hwnd, win32con.GWL_EXSTYLE)
         exstyle |= win32con.WS_EX_TOPMOST
         win32gui.SetWindowLong(selector_hwnd, win32con.GWL_EXSTYLE, exstyle)
@@ -232,8 +235,7 @@ class ScreenshotSelector:
             win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_SHOWWINDOW
         )
         
-        # Cursor auf normal geändert (von crosshair)
-        self.canvas = tk.Canvas(self.selector, highlightthickness=0, bg="black", cursor="arrow")
+        self.canvas = tk.Canvas(self.selector, highlightthickness=0, bg="black", cursor="crosshair")
         self.canvas.pack(fill="both", expand=True)
         
         self.start_x = None
@@ -248,97 +250,127 @@ class ScreenshotSelector:
         # Bind escape key to cancel
         self.selector.bind("<Escape>", self.cancel)
         
-        # Aktiviere aggressives topmost
+        # Draw instruction text
+        self.draw_instructions()
+        
         self.keep_selector_on_top()
 
-    def keep_selector_on_top(self):
-        """Stelle AGGRESSIV sicher, dass das Selector-Fenster immer oben bleibt"""
+    def get_system_scale_factor(self):
+        """Get the system DPI scaling factor"""
         try:
-            if not self.selector.winfo_exists():
-                return
-                
-            selector_hwnd = self.selector.winfo_id()
+            import ctypes
+            user32 = ctypes.windll.user32
+            user32.SetProcessDPIAware()
             
-            # Bringe das Fenster nach vorne
-            win32gui.BringWindowToTop(selector_hwnd)
-            win32gui.SetForegroundWindow(selector_hwnd)
+            # Get DPI for primary monitor
+            hdc = user32.GetDC(0)
+            dpi = ctypes.windll.gdi32.GetDeviceCaps(hdc, 88)  # 88 = LOGPIXELSX
+            user32.ReleaseDC(0, hdc)
             
-            # Setze es auf topmost
-            win32gui.SetWindowPos(
-                selector_hwnd,
-                win32con.HWND_TOPMOST,
-                0, 0, 0, 0,
-                win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_NOACTIVATE | win32con.SWP_SHOWWINDOW
+            scale_factor = dpi / 96.0
+            print(f"Detected scale factor: {scale_factor}")  # Debug info
+            return scale_factor
+        except Exception as e:
+            print(f"Error getting scale factor, using 1.0: {e}")  # Debug info
+            return 1.0
+
+    def draw_instructions(self):
+        """Draw instructions on the canvas"""
+        instructions = [
+            "Click and drag to select area",
+            "ESC to cancel",
+            "Release to capture"
+        ]
+        
+        for i, text in enumerate(instructions):
+            self.canvas.create_text(
+                10, 10 + i*20,
+                text=text,
+                fill="white",
+                font=("Arial", 12, "bold"),
+                anchor="nw",
+                tags="instructions"
             )
-            
-            # Wiederhole alle 50ms (noch häufiger für mehr Aggressivität)
-            self.selector.after(50, self.keep_selector_on_top)
-        except:
-            pass
-        
+
     def on_press(self, event):
-        self.start_x = event.x
-        self.start_y = event.y
-        # Entferne Info-Text wenn Auswahl beginnt
-        self.canvas.delete("info")
+        # Remove instructions when selection starts
+        self.canvas.delete("instructions")
         
-        # Zeichne Rechteck mit sehr gut sichtbarer Umrandung
+        # Get actual screen coordinates considering DPI scaling
+        self.start_x = event.x_root
+        self.start_y = event.y_root
+        
+        # Convert to canvas coordinates for drawing
+        canvas_x = event.x
+        canvas_y = event.y
+        
+        # Draw rectangle
         self.rect = self.canvas.create_rectangle(
-            self.start_x, self.start_y, self.start_x, self.start_y,
-            outline="#FF0000",  # Knalliges Rot für maximale Sichtbarkeit
-            width=3,           # Dicke Linie
-            fill="",           # Keine Füllung
-            dash=(10, 5)       # Längere gestrichelte Linie
+            canvas_x, canvas_y, canvas_x, canvas_y,
+            outline="#FF0000",
+            width=3,
+            fill="",
+            dash=(10, 5)
         )
         
-        # Erstelle Kreuzlinien für bessere Orientierung
-        self.create_crosshairs(event.x, event.y)
+        # Create crosshairs
+        self.create_crosshairs(canvas_x, canvas_y)
         
-        # Größen-Anzeige
+        # Size display
         self.size_text = self.canvas.create_text(
-            self.start_x, self.start_y - 25,
+            canvas_x, canvas_y - 25,
             text="0 x 0",
             fill="#FF0000",
             font=("Arial", 11, "bold"),
             tags="size"
         )
-    
+
     def create_crosshairs(self, x, y):
-        # Entferne alte Kreuzlinien
+        # Remove old crosshairs
         for line in self.crosshairs:
             self.canvas.delete(line)
         self.crosshairs = []
         
-        # Horizontale Linie über gesamten Bildschirm
+        # Horizontal line across entire screen
         self.crosshairs.append(self.canvas.create_line(
             0, y, self.canvas.winfo_width(), y,
             fill="#FF0000", width=1, dash=(2, 2)
         ))
         
-        # Vertikale Linie über gesamten Bildschirm
+        # Vertical line across entire screen
         self.crosshairs.append(self.canvas.create_line(
             x, 0, x, self.canvas.winfo_height(),
             fill="#FF0000", width=1, dash=(2, 2)
         ))
-    
+
     def on_drag(self, event):
         if self.rect:
-            self.canvas.coords(self.rect, self.start_x, self.start_y, event.x, event.y)
+            # Convert to canvas coordinates for drawing
+            canvas_x = event.x
+            canvas_y = event.y
             
-            # Aktualisiere Kreuzlinien
-            self.create_crosshairs(event.x, event.y)
+            # Calculate the rectangle coordinates in canvas space
+            start_canvas_x = self.start_x - self.selector.winfo_x()
+            start_canvas_y = self.start_y - self.selector.winfo_y()
             
-            # Aktualisiere Größen-Anzeige
-            width = abs(event.x - self.start_x)
-            height = abs(event.y - self.start_y)
-            mid_x = min(self.start_x, event.x) + width/2
-            mid_y = min(self.start_y, event.y) - 20
+            self.canvas.coords(self.rect, start_canvas_x, start_canvas_y, canvas_x, canvas_y)
+            
+            # Update crosshairs
+            self.create_crosshairs(canvas_x, canvas_y)
+            
+            # Update size display
+            width = abs(event.x_root - self.start_x)
+            height = abs(event.y_root - self.start_y)
+            
+            # Position text at the center top of selection
+            mid_x = (self.start_x + event.x_root) / 2 - self.selector.winfo_x()
+            mid_y = min(self.start_y, event.y_root) - self.selector.winfo_y() - 20
             
             self.canvas.coords(self.size_text, mid_x, mid_y)
             self.canvas.itemconfig(self.size_text, text=f"{width} × {height}")
-    
+
     def on_release(self, event):
-        end_x, end_y = event.x, event.y
+        end_x, end_y = event.x_root, event.y_root
         
         # Normalize coordinates
         x1 = min(self.start_x, end_x)
@@ -351,35 +383,16 @@ class ScreenshotSelector:
             self.cancel()
             return
         
-        # Hole die DPI-Skalierung
-        try:
-            import ctypes
-            user32 = ctypes.windll.user32
-            user32.SetProcessDPIAware()
-            
-            # Hole den primären Monitor Handle
-            hMonitor = user32.MonitorFromPoint(ctypes.wintypes.POINT(int(x1), int(y1)), 2)
-            
-            # Hole die DPI-Skalierung
-            shcore = ctypes.windll.shcore
-            dpiX = ctypes.c_uint()
-            dpiY = ctypes.c_uint()
-            shcore.GetDpiForMonitor(hMonitor, 0, ctypes.byref(dpiX), ctypes.byref(dpiY))
-            
-            scale_factor = dpiX.value / 96.0  # 96 DPI = 100% Skalierung
-        except:
-            scale_factor = 1.0
+        # Apply DPI scaling correction
+        x1_scaled = int(x1 / self.scale_factor)
+        y1_scaled = int(y1 / self.scale_factor)
+        x2_scaled = int(x2 / self.scale_factor)
+        y2_scaled = int(y2 / self.scale_factor)
         
-        # Skaliere die Koordinaten
-        x1_scaled = int(x1 * scale_factor)
-        y1_scaled = int(y1 * scale_factor)
-        x2_scaled = int(x2 * scale_factor)
-        y2_scaled = int(y2 * scale_factor)
-        
-        # Speichere die skalierten Koordinaten
+        # Save the scaled coordinates
         self.final_coords = (x1_scaled, y1_scaled, x2_scaled, y2_scaled)
         
-        # Entferne alle visuellen Elemente
+        # Clean up visual elements
         for line in self.crosshairs:
             self.canvas.delete(line)
         self.crosshairs = []
@@ -388,35 +401,55 @@ class ScreenshotSelector:
         if hasattr(self, 'size_text'):
             self.canvas.delete(self.size_text)
         
-        # Verstecke das Overlay
+        # Hide overlay
         self.selector.withdraw()
         
-        # Screenshot mit Verzögerung
+        # Take screenshot with delay
         root.after(250, self.take_screenshot)
 
     def take_screenshot(self):
         x1, y1, x2, y2 = self.final_coords
         
-        # Screenshot mit den skalierten Koordinaten
-        screenshot = ImageGrab.grab(bbox=(x1, y1, x2, y2))
+        # Ensure coordinates are within screen bounds
+        screen_width = win32api.GetSystemMetrics(0)
+        screen_height = win32api.GetSystemMetrics(1)
         
-        # Save to temporary file
-        temp_path = os.path.join(os.environ['TEMP'], "selected_screenshot.png")
-        screenshot.save(temp_path)
+        x1 = max(0, min(x1, screen_width))
+        y1 = max(0, min(y1, screen_height))
+        x2 = max(0, min(x2, screen_width))
+        y2 = max(0, min(y2, screen_height))
+        
+        # Ensure x2 > x1 and y2 > y1
+        if x2 <= x1:
+            x2 = x1 + 10
+        if y2 <= y1:
+            y2 = y1 + 10
+        
+        try:
+            screenshot = ImageGrab.grab(bbox=(x1, y1, x2, y2))
+            
+            # Save to temporary file
+            temp_path = os.path.join(os.environ['TEMP'], "selected_screenshot.png")
+            screenshot.save(temp_path)
+            
+            # Update state
+            state["screenshot_path"] = temp_path
+            state["screenshot_loaded"] = True
+            state["selecting_area"] = False
+            width = abs(x2 - x1)
+            height = abs(y2 - y1)
+            update_label(f"Screenshot ready ({width}x{height})\n(ALT+T) screenshot | (ALT+ENTER) send | (ALT+R) reset API key")
+            
+        except Exception as e:
+            update_label(f"Screenshot error: {str(e)}\n(ALT+T) to try again")
+            state["selecting_area"] = False
         
         # Clean up
         self.selector.destroy()
-        
-        # Update state
-        state["screenshot_path"] = temp_path
-        state["screenshot_loaded"] = True
-        state["selecting_area"] = False
-        width = abs(x2 - x1)
-        height = abs(y2 - y1)
-        update_label(f"Screenshot ready ({width}x{height})\n(ALT+T) screenshot | (ALT+ENTER) send | (ALT+R) reset API key")    
-    
+
     def cancel(self, event=None):
-        # Entferne Kreuzlinien
+        """Cancel the screenshot selection"""
+        # Remove crosshairs
         for line in self.crosshairs:
             self.canvas.delete(line)
         self.crosshairs = []
@@ -424,6 +457,31 @@ class ScreenshotSelector:
         self.selector.destroy()
         state["selecting_area"] = False
         update_label("(ALT+T) screenshot | (ALT+ENTER) send | (ALT+R) reset API key")
+
+    def keep_selector_on_top(self):
+        """AGGRESSIVELY ensure selector window stays on top"""
+        try:
+            if not self.selector.winfo_exists():
+                return
+                
+            selector_hwnd = self.selector.winfo_id()
+            
+            # Bring window to top
+            win32gui.BringWindowToTop(selector_hwnd)
+            win32gui.SetForegroundWindow(selector_hwnd)
+            
+            # Set it to topmost
+            win32gui.SetWindowPos(
+                selector_hwnd,
+                win32con.HWND_TOPMOST,
+                0, 0, 0, 0,
+                win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_NOACTIVATE | win32con.SWP_SHOWWINDOW
+            )
+            
+            # Repeat every 50ms
+            self.selector.after(50, self.keep_selector_on_top)
+        except:
+            pass
 
 # --- Screenshot helpers ---
 def get_latest_screenshot():
@@ -433,8 +491,8 @@ def get_latest_screenshot():
     return max(files, key=os.path.getctime)
 
 def start_area_selection():
-    # Verhindere Screenshot-Auswahl während des Sendens, bei aktiver Auswahl
-    # ODER wenn bereits eine Antwort angezeigt wird
+    # Prevent screenshot selection while sending, during active selection
+    # OR when a response is already shown
     if state["selecting_area"] or state["sending"] or state["response_shown"]:
         return
     

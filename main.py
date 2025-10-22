@@ -13,9 +13,35 @@ from openai import OpenAI
 import json
 import getpass
 
+def ensure_process_dpi_awareness():
+    try:
+        import ctypes
+        # Try SetProcessDpiAwareness (Windows 8.1+)
+        try:
+            shcore = ctypes.windll.shcore
+            PROCESS_PER_MONITOR_DPI_AWARE = 2
+            shcore.SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE)
+        except Exception:
+            # Fallback to older API
+            try:
+                ctypes.windll.user32.SetProcessDPIAware()
+            except Exception:
+                pass
+        # Also try SetProcessDpiAwarenessContext (Windows 10+)
+        try:
+            DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = -4
+            ctypes.windll.user32.SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+# call it early, before creating any top-level windows
+ensure_process_dpi_awareness()
+
 # --- CONFIG ---
 username = getpass.getuser()
-SCREENSHOT_PATH = rf"C:\Users\{username}\Pictures\Screenshots\*"
+TEMP_SCREENSHOT_PATH = os.path.join(os.environ['TEMP'], "snip_capture.png")
 
 PROMPT_TEXT = """
 Welche Antwortmöglichkeiten, glaubst du, sind richtig? Die Antwortmöglichkeiten sind mit Buchstaben geordnet. Schreibe in deiner Antwort nur Buchstaben mit einem Leerzeichen getrennt und nur Buchstaben, die die richtige Lösung beinhalten. Die Antwort sollte gut durchgedacht sein.
@@ -58,26 +84,24 @@ def is_valid_api_key(api_key):
         return False
     if not api_key.startswith('sk-'):
         return False
-    if len(api_key) < 10:  # Minimum reasonable length for an API key
+    if len(api_key) < 10:
         return False
     return True
 
 def get_api_key():
     """Get API key from saved config or user input"""
-    # First try to load saved API key
     saved_api_key = load_saved_api_key()
     if saved_api_key and is_valid_api_key(saved_api_key):
         return saved_api_key
     
-    # If no valid saved key, ask user
     root = tk.Tk()
-    root.withdraw()  # Hide the main window
+    root.withdraw()
     
     while True:
         api_key = simpledialog.askstring(
             "OpenAI API Key Required", 
             "Enter your OpenAI API key (starts with sk-...):",
-            show='*'  # This hides the input (shows asterisks)
+            show='*'
         )
         
         if not api_key:
@@ -86,7 +110,6 @@ def get_api_key():
             return None
         
         if is_valid_api_key(api_key):
-            # Save the valid API key
             if save_api_key(api_key):
                 messagebox.showinfo("Success", "API key saved successfully!")
             break
@@ -115,9 +138,9 @@ state = {
 
 # --- UI SETUP ---
 root = tk.Tk()
-root.overrideredirect(True)  # no border/title
-root.attributes("-topmost", True)  # always on top
-root.configure(bg="black")  # black background for color-key transparency
+root.overrideredirect(True)
+root.attributes("-topmost", True)
+root.configure(bg="black")
 root.geometry("300x40+10+10")
 
 label = tk.Label(
@@ -196,7 +219,6 @@ def reset_api_key():
                 os.remove(config_path)
             messagebox.showinfo("Success", "API key reset. The application will now close.")
             temp_root.destroy()
-            # Properly shutdown the application
             keyboard.unhook_all_hotkeys()
             root.quit()
             root.destroy()
@@ -207,300 +229,208 @@ def reset_api_key():
     else:
         temp_root.destroy()
 
-# --- Screenshot selection overlay ---
-class ScreenshotSelector:
+# --- Invisible Screenshot Selector ---
+# --- Invisible Screenshot Selector (DPI-corrected) ---
+class InvisibleScreenshotSelector:
     def __init__(self):
         self.selector = tk.Toplevel(root)
         self.selector.attributes("-fullscreen", True)
-        self.selector.attributes("-alpha", 0.01)
+        self.selector.attributes("-alpha", 0.01)  # Nearly invisible
         self.selector.configure(bg="black")
         self.selector.attributes("-topmost", True)
-        
-        # Get DPI scaling factor FIRST
-        self.scale_factor = self.get_system_scale_factor()
-        
-        # Make window truly topmost
+
+        # Make sure window exists and get its hwnd
         self.selector.update_idletasks()
         selector_hwnd = self.selector.winfo_id()
-        
-        # Set extended window styles
-        exstyle = win32gui.GetWindowLong(selector_hwnd, win32con.GWL_EXSTYLE)
-        exstyle |= win32con.WS_EX_TOPMOST
-        win32gui.SetWindowLong(selector_hwnd, win32con.GWL_EXSTYLE, exstyle)
-        
-        win32gui.SetWindowPos(
-            selector_hwnd,
-            win32con.HWND_TOPMOST,
-            0, 0, 0, 0,
-            win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_SHOWWINDOW
-        )
-        
-        self.canvas = tk.Canvas(self.selector, highlightthickness=0, bg="black", cursor="crosshair")
+
+        # Get DPI scaling factor for this window (returns 1.0, 1.25, 1.5, etc.)
+        self.scale_factor = self.get_system_scale_factor(selector_hwnd)
+        try:
+            print(f"[DEBUG] Selector scale factor detected: {self.scale_factor}")
+        except Exception:
+            pass
+
+        # Make window truly topmost
+        try:
+            exstyle = win32gui.GetWindowLong(selector_hwnd, win32con.GWL_EXSTYLE)
+            exstyle |= win32con.WS_EX_TOPMOST
+            win32gui.SetWindowLong(selector_hwnd, win32con.GWL_EXSTYLE, exstyle)
+        except Exception:
+            pass
+
+        try:
+            win32gui.SetWindowPos(
+                selector_hwnd,
+                win32con.HWND_TOPMOST,
+                0, 0, 0, 0,
+                win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_SHOWWINDOW
+            )
+        except Exception:
+            pass
+
+        self.canvas = tk.Canvas(self.selector, highlightthickness=0, bg="black", cursor="arrow")
         self.canvas.pack(fill="both", expand=True)
-        
+
         self.start_x = None
         self.start_y = None
-        self.rect = None
-        self.crosshairs = []
-        
+
         self.canvas.bind("<ButtonPress-1>", self.on_press)
         self.canvas.bind("<B1-Motion>", self.on_drag)
         self.canvas.bind("<ButtonRelease-1>", self.on_release)
-        
-        # Bind escape key to cancel
         self.selector.bind("<Escape>", self.cancel)
-        
-        # Draw instruction text
-        self.draw_instructions()
-        
+
         self.keep_selector_on_top()
 
-    def get_system_scale_factor(self):
-        """Get the system DPI scaling factor"""
+    def get_system_scale_factor(self, hwnd):
+        """Return DPI scale factor for the window (1.0, 1.25, 1.5...)."""
         try:
             import ctypes
             user32 = ctypes.windll.user32
-            user32.SetProcessDPIAware()
-            
-            # Get DPI for primary monitor
-            hdc = user32.GetDC(0)
-            dpi = ctypes.windll.gdi32.GetDeviceCaps(hdc, 88)  # 88 = LOGPIXELSX
-            user32.ReleaseDC(0, hdc)
-            
-            scale_factor = dpi / 96.0
-            print(f"Detected scale factor: {scale_factor}")  # Debug info
-            return scale_factor
-        except Exception as e:
-            print(f"Error getting scale factor, using 1.0: {e}")  # Debug info
-            return 1.0
+            gdi32 = ctypes.windll.gdi32
 
-    def draw_instructions(self):
-        """Draw instructions on the canvas"""
-        instructions = [
-            "Click and drag to select area",
-            "ESC to cancel",
-            "Release to capture"
-        ]
-        
-        for i, text in enumerate(instructions):
-            self.canvas.create_text(
-                10, 10 + i*20,
-                text=text,
-                fill="white",
-                font=("Arial", 12, "bold"),
-                anchor="nw",
-                tags="instructions"
-            )
+            # Prefer GetDpiForWindow (Windows 10+)
+            try:
+                dpi = user32.GetDpiForWindow(hwnd)
+                if dpi and dpi > 0:
+                    return dpi / 96.0
+            except Exception:
+                pass
+
+            # Fallback to GetDpiForSystem
+            try:
+                dpi = user32.GetDpiForSystem()
+                if dpi and dpi > 0:
+                    return dpi / 96.0
+            except Exception:
+                pass
+
+            # Fallback to GetDeviceCaps
+            try:
+                hdc = user32.GetDC(0)
+                LOGPIXELSX = 88
+                dpi = gdi32.GetDeviceCaps(hdc, LOGPIXELSX)
+                user32.ReleaseDC(0, hdc)
+                if dpi and dpi > 0:
+                    return dpi / 96.0
+            except Exception:
+                pass
+        except Exception:
+            pass
+        return 1.0
 
     def on_press(self, event):
-        # Remove instructions when selection starts
-        self.canvas.delete("instructions")
-        
-        # Get actual screen coordinates considering DPI scaling
+        # event.x_root / event.y_root are logical (DIP) coords
         self.start_x = event.x_root
         self.start_y = event.y_root
-        
-        # Convert to canvas coordinates for drawing
-        canvas_x = event.x
-        canvas_y = event.y
-        
-        # Draw rectangle
-        self.rect = self.canvas.create_rectangle(
-            canvas_x, canvas_y, canvas_x, canvas_y,
-            outline="#FF0000",
-            width=3,
-            fill="",
-            dash=(10, 5)
-        )
-        
-        # Create crosshairs
-        self.create_crosshairs(canvas_x, canvas_y)
-        
-        # Size display
-        self.size_text = self.canvas.create_text(
-            canvas_x, canvas_y - 25,
-            text="0 x 0",
-            fill="#FF0000",
-            font=("Arial", 11, "bold"),
-            tags="size"
-        )
-
-    def create_crosshairs(self, x, y):
-        # Remove old crosshairs
-        for line in self.crosshairs:
-            self.canvas.delete(line)
-        self.crosshairs = []
-        
-        # Horizontal line across entire screen
-        self.crosshairs.append(self.canvas.create_line(
-            0, y, self.canvas.winfo_width(), y,
-            fill="#FF0000", width=1, dash=(2, 2)
-        ))
-        
-        # Vertical line across entire screen
-        self.crosshairs.append(self.canvas.create_line(
-            x, 0, x, self.canvas.winfo_height(),
-            fill="#FF0000", width=1, dash=(2, 2)
-        ))
 
     def on_drag(self, event):
-        if self.rect:
-            # Convert to canvas coordinates for drawing
-            canvas_x = event.x
-            canvas_y = event.y
-            
-            # Calculate the rectangle coordinates in canvas space
-            start_canvas_x = self.start_x - self.selector.winfo_x()
-            start_canvas_y = self.start_y - self.selector.winfo_y()
-            
-            self.canvas.coords(self.rect, start_canvas_x, start_canvas_y, canvas_x, canvas_y)
-            
-            # Update crosshairs
-            self.create_crosshairs(canvas_x, canvas_y)
-            
-            # Update size display
-            width = abs(event.x_root - self.start_x)
-            height = abs(event.y_root - self.start_y)
-            
-            # Position text at the center top of selection
-            mid_x = (self.start_x + event.x_root) / 2 - self.selector.winfo_x()
-            mid_y = min(self.start_y, event.y_root) - self.selector.winfo_y() - 20
-            
-            self.canvas.coords(self.size_text, mid_x, mid_y)
-            self.canvas.itemconfig(self.size_text, text=f"{width} × {height}")
+        pass
 
     def on_release(self, event):
         end_x, end_y = event.x_root, event.y_root
-        
-        # Normalize coordinates
+
         x1 = min(self.start_x, end_x)
         y1 = min(self.start_y, end_y)
         x2 = max(self.start_x, end_x)
         y2 = max(self.start_y, end_y)
-        
-        # Ensure minimum size
+
         if abs(x2 - x1) < 10 or abs(y2 - y1) < 10:
             self.cancel()
             return
-        
-        # Apply DPI scaling correction
-        x1_scaled = int(x1 / self.scale_factor)
-        y1_scaled = int(y1 / self.scale_factor)
-        x2_scaled = int(x2 / self.scale_factor)
-        y2_scaled = int(y2 / self.scale_factor)
-        
-        # Save the scaled coordinates
-        self.final_coords = (x1_scaled, y1_scaled, x2_scaled, y2_scaled)
-        
-        # Clean up visual elements
-        for line in self.crosshairs:
-            self.canvas.delete(line)
-        self.crosshairs = []
-        if hasattr(self, 'rect'):
-            self.canvas.delete(self.rect)
-        if hasattr(self, 'size_text'):
-            self.canvas.delete(self.size_text)
-        
-        # Hide overlay
+
+        # IMPORTANT: Convert logical coords → physical pixels by MULTIPLYING by scale_factor
+        x1_phys = int(round(x1 * self.scale_factor))
+        y1_phys = int(round(y1 * self.scale_factor))
+        x2_phys = int(round(x2 * self.scale_factor))
+        y2_phys = int(round(y2 * self.scale_factor))
+
+        self.final_coords = (x1_phys, y1_phys, x2_phys, y2_phys)
+
         self.selector.withdraw()
-        
-        # Take screenshot with delay
-        root.after(250, self.take_screenshot)
+        root.after(200, self.take_screenshot)
 
     def take_screenshot(self):
         x1, y1, x2, y2 = self.final_coords
-        
-        # Ensure coordinates are within screen bounds
-        screen_width = win32api.GetSystemMetrics(0)
-        screen_height = win32api.GetSystemMetrics(1)
-        
-        x1 = max(0, min(x1, screen_width))
-        y1 = max(0, min(y1, screen_height))
+
+        # Get logical screen metrics and convert to physical pixels too
+        try:
+            screen_width_logical = win32api.GetSystemMetrics(0)
+            screen_height_logical = win32api.GetSystemMetrics(1)
+            screen_width = int(round(screen_width_logical * self.scale_factor))
+            screen_height = int(round(screen_height_logical * self.scale_factor))
+        except Exception:
+            screen_width = x2 + 10
+            screen_height = y2 + 10
+
+        # Clamp
+        x1 = max(0, min(x1, screen_width - 1))
+        y1 = max(0, min(y1, screen_height - 1))
         x2 = max(0, min(x2, screen_width))
         y2 = max(0, min(y2, screen_height))
-        
-        # Ensure x2 > x1 and y2 > y1
+
         if x2 <= x1:
             x2 = x1 + 10
         if y2 <= y1:
             y2 = y1 + 10
-        
+
         try:
             screenshot = ImageGrab.grab(bbox=(x1, y1, x2, y2))
-            
-            # Save to temporary file
-            temp_path = os.path.join(os.environ['TEMP'], "selected_screenshot.png")
-            screenshot.save(temp_path)
-            
-            # Update state
-            state["screenshot_path"] = temp_path
+            screenshot.save(TEMP_SCREENSHOT_PATH)
+
+            state["screenshot_path"] = TEMP_SCREENSHOT_PATH
             state["screenshot_loaded"] = True
             state["selecting_area"] = False
             width = abs(x2 - x1)
             height = abs(y2 - y1)
             update_label(f"Screenshot ready ({width}x{height})\n(ALT+T) screenshot | (ALT+ENTER) send | (ALT+R) reset API key")
-            
         except Exception as e:
             update_label(f"Screenshot error: {str(e)}\n(ALT+T) to try again")
             state["selecting_area"] = False
-        
-        # Clean up
-        self.selector.destroy()
+
+        try:
+            self.selector.destroy()
+        except Exception:
+            pass
 
     def cancel(self, event=None):
-        """Cancel the screenshot selection"""
-        # Remove crosshairs
-        for line in self.crosshairs:
-            self.canvas.delete(line)
-        self.crosshairs = []
-        
-        self.selector.destroy()
+        try:
+            self.selector.destroy()
+        except Exception:
+            pass
         state["selecting_area"] = False
         update_label("(ALT+T) screenshot | (ALT+ENTER) send | (ALT+R) reset API key")
 
     def keep_selector_on_top(self):
-        """AGGRESSIVELY ensure selector window stays on top"""
         try:
             if not self.selector.winfo_exists():
                 return
-                
             selector_hwnd = self.selector.winfo_id()
-            
-            # Bring window to top
             win32gui.BringWindowToTop(selector_hwnd)
-            win32gui.SetForegroundWindow(selector_hwnd)
-            
-            # Set it to topmost
+            try:
+                win32gui.SetForegroundWindow(selector_hwnd)
+            except Exception:
+                pass
             win32gui.SetWindowPos(
                 selector_hwnd,
                 win32con.HWND_TOPMOST,
                 0, 0, 0, 0,
-                win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_NOACTIVATE | win32con.SWP_SHOWWINDOW
+                win32con.SWP_NOMOVE | win32con.SWP_NOSIZE |
+                win32con.SWP_NOACTIVATE | win32con.SWP_SHOWWINDOW
             )
-            
-            # Repeat every 50ms
             self.selector.after(50, self.keep_selector_on_top)
         except:
             pass
 
-# --- Screenshot helpers ---
-def get_latest_screenshot():
-    files = glob.glob(SCREENSHOT_PATH)
-    if not files:
-        return None
-    return max(files, key=os.path.getctime)
 
+# --- Start area selection ---
 def start_area_selection():
-    # Prevent screenshot selection while sending, during active selection
-    # OR when a response is already shown
     if state["selecting_area"] or state["sending"] or state["response_shown"]:
         return
     
     state["selecting_area"] = True
-    update_label("Select area with mouse (ESC to cancel)")
+    update_label("Click and drag to select area (ESC to cancel)")
     
-    # Small delay to ensure the UI updates before showing selector
-    root.after(100, lambda: ScreenshotSelector())
+    root.after(100, lambda: InvisibleScreenshotSelector())
 
 # --- OpenAI request (background thread) ---
 def send_to_openai_and_update_ui():
@@ -539,7 +469,6 @@ def on_enter_pressed():
         threading.Thread(target=send_to_openai_and_update_ui, daemon=True).start()
         return
     if state["response_shown"]:
-        # Reset for next screenshot
         state.update({
             "screenshot_path": None,
             "screenshot_loaded": False,
@@ -551,10 +480,10 @@ def on_enter_pressed():
 
 # --- Register global hotkeys ---
 try:
-    keyboard.add_hotkey("alt+t", start_area_selection)  # Start area selection
-    keyboard.add_hotkey("alt+enter", on_enter_pressed)  # Send or continue
-    keyboard.add_hotkey("alt+r", reset_api_key)  # Reset API key
-    keyboard.add_hotkey("alt+q", lambda: (keyboard.unhook_all_hotkeys(), root.destroy()))  # Quit
+    keyboard.add_hotkey("alt+t", start_area_selection)
+    keyboard.add_hotkey("alt+enter", on_enter_pressed)
+    keyboard.add_hotkey("alt+r", reset_api_key)
+    keyboard.add_hotkey("alt+q", lambda: (keyboard.unhook_all_hotkeys(), root.destroy()))
 except Exception as e:
     update_label(f"Keyboard hook error: {e}\nRun as admin if needed.")
 

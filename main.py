@@ -325,12 +325,14 @@ class ScreenshotApp:
         self.hw = self.root.winfo_id()
 
         # Create a frame for buttons with transparent background
-        self._button_frame = tk.Frame(self.root, bg=self.transparent_color)
-        self._button_frame.pack(fill="both", expand=True, padx=1, pady=1)
+        self._button_frame = tk.Frame(self.root, bg=self.transparent_color, height=25)
+        self._button_frame.pack(fill="x", expand=False, padx=1, pady=1)
+        self._button_frame.pack_propagate(False)  # Prevent frame from resizing based on content
         
         # Use grid layout for better control - buttons stay fixed width
         self._button_frame.columnconfigure(0, weight=1)  # Text area expands
         self._button_frame.columnconfigure(1, weight=0)  # Buttons fixed width
+        self._button_frame.rowconfigure(0, weight=0, minsize=25)  # Fixed row height
 
         # Status label (very small, dark, transparent background) - in grid column 0
         self._status_label = tk.Label(
@@ -341,6 +343,7 @@ class ScreenshotApp:
             font=("Arial", 7),
             anchor="w",
             justify="left",
+            height=1,  # Fixed height - single line
         )
         self._status_label.grid(row=0, column=0, sticky="ew", padx=2)
 
@@ -479,21 +482,24 @@ class ScreenshotApp:
             if is_response and text:
                 # Calculate width needed (buttons take ~80px, add padding)
                 text_width = min(max(len(text) * 6 + 80, 200), 400)  # Min 200px, max 400px
-                # Set wraplength to allow text wrapping if needed (leave space for buttons)
-                wraplength = max(text_width - 90, 100)  # Ensure minimum width for text
+                # Don't use wraplength - keep text on single line to prevent vertical expansion
                 # Update label with text and font BEFORE changing geometry
                 self._status_label.config(
                     text=text, 
                     font=("Arial", 10), 
                     fg="#2a2a2a",
-                    wraplength=wraplength,
+                    wraplength=0,  # No wrapping - single line only
                     anchor="w",
-                    justify="left"
+                    justify="left",
+                    height=1  # Fixed height - single line
                 )
                 # Force label update
                 self._status_label.update_idletasks()
                 # Then expand window to fit more text (buttons stay fixed on right via grid)
+                # Explicitly set height to 25 to prevent vertical expansion
                 self.root.geometry(f"{text_width}x25+5+5")
+                # Ensure the button frame doesn't expand vertically
+                self._button_frame.config(height=25)
                 # Force window update to ensure text is visible and buttons stay in place
                 # Grid layout ensures buttons stay fixed in column 1
                 self.root.update_idletasks()
@@ -826,7 +832,7 @@ class ScreenshotApp:
             
             # Handle no_question and incomplete_question cases
             if question_type == "no_question":
-                result_text = "no question detected"
+                result_text = "no question"
                 self.state["response_text"] = result_text
                 self.state["response_shown"] = True
                 self._update_status(result_text, is_response=True)

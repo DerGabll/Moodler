@@ -1,5 +1,5 @@
-keyboard==0.13.5
-openai==2.6.0
-dotenv==0.9.9
-pywin32==311
-pillow==12.0.0
+openai>=1.0.0
+python-dotenv==1.0.0
+pillow>=10.0.0
+# Windows-only (optional, install manually on Windows: pip install pywin32)
+# pywin32>=311

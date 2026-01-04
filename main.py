@@ -2,10 +2,10 @@
 """
 Screenshot -> OpenAI helper (refactored & cleaned)
 Features:
- - Global hotkeys: Alt+T = select screenshot, Alt+Enter = send to OpenAI, Alt+R = reset API key, Alt+Q = quit
+ - Mouse-controlled UI with small, unobtrusive buttons
  - DPI-aware invisible selection window (Tkinter)
- - Saves API key to %APPDATA%/ScreenshotAI/config.json
- - Sends screenshot to OpenAI Responses API as a data URI
+ - Saves API key to config directory (cross-platform)
+ - Sends screenshot to OpenAI Chat Completions API with vision support
 """
 
 from __future__ import annotations
@@ -19,7 +19,6 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 import getpass
-import keyboard
 import tkinter as tk
 from tkinter import messagebox, simpledialog
 
@@ -53,14 +52,8 @@ PROMPT_TEXT = (
     "nur Buchstaben mit einem Leerzeichen getrennt und nur Buchstaben, die die richtige Lösung beinhalten. "
     "Die Antwort sollte gut durchgedacht sein."
 )
-MODEL_NAME = "gpt-5"  # keep as-is from your code
+MODEL_NAME = "gpt-5"  # Using GPT-5 which supports vision
 TEMP_SCREENSHOT_NAME = "moodler_screenshot.png"
-HOTKEYS = {
-    "capture": "alt+t",
-    "send": "alt+enter",
-    "reset": "alt+r",
-    "quit": "alt+q",
-}
 # Logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 
@@ -68,9 +61,13 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(mes
 # Utilities
 # -----------------------
 def appdata_config_path() -> Path:
-    """Return path to config file in %APPDATA% (Windows)."""
-    appdata = os.getenv("APPDATA") or str(Path.home() / "AppData" / "Roaming")
-    config_dir = Path(appdata) / APP_NAME
+    """Return path to config file (cross-platform)."""
+    if os.name == "nt":  # Windows
+        appdata = os.getenv("APPDATA") or str(Path.home() / "AppData" / "Roaming")
+        config_dir = Path(appdata) / APP_NAME
+    else:  # Linux/macOS
+        xdg_config = os.getenv("XDG_CONFIG_HOME") or str(Path.home() / ".config")
+        config_dir = Path(xdg_config) / APP_NAME
     config_dir.mkdir(parents=True, exist_ok=True)
     return config_dir / "config.json"
 
@@ -117,7 +114,7 @@ def looks_like_api_key(k: Optional[str]) -> bool:
 # -----------------------
 def ensure_process_dpi_awareness() -> None:
     """Try to set process DPI awareness for better high-DPI behavior on Windows."""
-    if ctypes is None:
+    if os.name != "nt" or ctypes is None:
         return
     try:
         # Windows 8.1+ API
@@ -146,8 +143,9 @@ def ensure_process_dpi_awareness() -> None:
 
 def get_system_scale_factor(hwnd: Optional[int] = None) -> float:
     """Return DPI scale factor (1.0 = 100%, 1.25 = 125%, etc)."""
-    if True:
-        return 1.0
+    # On Linux, Tkinter handles scaling automatically, so return 1.0
+    # On Windows, this would need proper DPI detection
+    return 1.0
 
 
 # -----------------------
@@ -242,9 +240,9 @@ class InvisibleScreenshotSelector:
         try:
             if not self._win.winfo_exists():
                 return
-            hwnd = self._win.winfo_id()
-            # Try to bring to top using win32 if available
-            if win32gui and win32con:
+            # Windows-specific: use win32 to bring to top
+            if os.name == "nt" and win32gui and win32con:
+                hwnd = self._win.winfo_id()
                 try:
                     win32gui.BringWindowToTop(hwnd)
                     win32gui.SetWindowPos(
@@ -258,6 +256,9 @@ class InvisibleScreenshotSelector:
                     )
                 except Exception:
                     pass
+            else:
+                # Linux: use Tkinter attributes
+                self._win.attributes("-topmost", True)
             self._win.after(50, self._keep_on_top)
         except Exception:
             pass
@@ -283,21 +284,77 @@ class ScreenshotApp:
         self.root = tk.Tk()
         self.root.overrideredirect(True)
         self.root.attributes("-topmost", True)
-        self.root.configure(bg="black")
-        # small toolbar in top-left
-        self.root.geometry("300x40+10+10")
-        self._label = tk.Label(
-            self.root,
-            text="(ALT+T) screenshot | (ALT+ENTER) send | (ALT+R) reset API key",
-            fg="lime",
-            bg="black",
-            font=("Consolas", 12),
-            justify="left",
+        # Use a unique color for transparency (will be made transparent)
+        self.transparent_color = "#010101"  # Almost black, unique for transparency
+        self.root.configure(bg=self.transparent_color)
+        # small toolbar in top-left - minimal size
+        self.root.geometry("200x25+5+5")
+        self.hw = self.root.winfo_id()
+
+        # Create a frame for buttons with transparent background
+        self._button_frame = tk.Frame(self.root, bg=self.transparent_color)
+        self._button_frame.pack(fill="both", expand=True, padx=1, pady=1)
+
+        # Status label (very small, dark, transparent background)
+        self._status_label = tk.Label(
+            self._button_frame,
+            text="Ready",
+            fg="#2a2a2a",  # Dark gray, visible on transparent
+            bg=self.transparent_color,
+            font=("Arial", 7),
             anchor="w",
         )
-        self._label.pack(fill="both", expand=True, padx=4, pady=2)
+        self._status_label.pack(side="left", padx=2)
+
+        # Buttons - very small and dark, with semi-transparent backgrounds
+        button_style = {
+            "bg": "#2a2a2a",  # Dark gray, visible on transparent
+            "fg": "#4a4a4a",  # Lighter gray for text/symbols
+            "activebackground": "#3a3a3a",
+            "activeforeground": "#5a5a5a",
+            "relief": "flat",
+            "borderwidth": 0,
+            "font": ("Arial", 6),
+            "padx": 3,
+            "pady": 1,
+        }
+
+        self._btn_screenshot = tk.Button(
+            self._button_frame,
+            text="📷",
+            command=self.start_area_selection,
+            **button_style,
+        )
+        self._btn_screenshot.pack(side="left", padx=1)
+
+        self._btn_send = tk.Button(
+            self._button_frame,
+            text="➤",
+            command=self.send_current_screenshot,
+            **button_style,
+        )
+        self._btn_send.pack(side="left", padx=1)
+
+        self._btn_reset = tk.Button(
+            self._button_frame,
+            text="↻",
+            command=self.reset_api_key,
+            **button_style,
+        )
+        self._btn_reset.pack(side="left", padx=1)
+
+        self._btn_quit = tk.Button(
+            self._button_frame,
+            text="✕",
+            command=self._cleanup_and_quit,
+            **button_style,
+        )
+        self._btn_quit.pack(side="left", padx=1)
+
         self.root.update_idletasks()
-        self.hw = self.root.winfo_id()
+
+        # Apply transparency
+        self._apply_transparency()
 
         # Try to make the toolbar non-activating / click-through where possible
         self._apply_window_exstyle()
@@ -305,34 +362,61 @@ class ScreenshotApp:
         # OpenAI client will be created after providing API key
         self.client = None
 
-        # Hook hotkeys
-        self._register_hotkeys()
-
-        # initial label
-        self._update_label("(ALT+T) screenshot | (ALT+ENTER) send | (ALT+R) reset API key")
+        # Initial status
+        self._update_status("Ready")
 
     # ---------- Window helpers ----------
+    def _apply_transparency(self):
+        """Apply transparency to the window background."""
+        if os.name == "nt" and win32gui and win32con and win32api:
+            # Windows: use color key transparency
+            try:
+                exstyle = win32gui.GetWindowLong(self.hw, win32con.GWL_EXSTYLE)
+                exstyle |= win32con.WS_EX_LAYERED
+                win32gui.SetWindowLong(self.hw, win32con.GWL_EXSTYLE, exstyle)
+                # Make the transparent color transparent
+                color_key = win32api.RGB(1, 1, 1)  # #010101
+                win32gui.SetLayeredWindowAttributes(self.hw, color_key, 0, win32con.LWA_COLORKEY)
+            except Exception:
+                logging.exception("Failed to apply transparency on Windows")
+        else:
+            # Linux: Use a compositor-friendly approach
+            # Try to set the window to support transparency through the compositor
+            try:
+                # Set window attributes that compositors recognize for transparency
+                # The transparent color (#010101) will be handled by the compositor
+                # if it supports per-pixel transparency
+                self.root.attributes("-alpha", 0.99)  # Slight transparency hint
+                # Some compositors will make the specific color transparent
+                # This works best with compositors like picom, compton, or KWin
+            except Exception:
+                # If alpha doesn't work, try without it - compositor may handle color key
+                try:
+                    self.root.attributes("-alpha", 1.0)
+                except Exception:
+                    logging.exception("Failed to apply transparency on Linux")
+
     def _apply_window_exstyle(self):
         """Attempt to set extended window styles so the toolbar is non-activating and transparent color-keyed."""
-        if not (win32gui and win32con and win32api):
-            return
-        try:
-            exstyle = win32gui.GetWindowLong(self.hw, win32con.GWL_EXSTYLE)
-            exstyle |= win32con.WS_EX_LAYERED | win32con.WS_EX_TRANSPARENT | win32con.WS_EX_TOOLWINDOW
-            # custom NOACTIVATE constant used previously: 0x08000000
-            exstyle |= 0x08000000
-            win32gui.SetWindowLong(self.hw, win32con.GWL_EXSTYLE, exstyle)
-            color_key = win32api.RGB(0, 0, 0)
-            win32gui.SetLayeredWindowAttributes(self.hw, color_key, 0, win32con.LWA_COLORKEY)
-        except Exception:
-            logging.exception("Failed to set extended window styles for toolbar")
-
+        # Windows-specific window styling
+        if os.name == "nt" and win32gui and win32con and win32api:
+            try:
+                exstyle = win32gui.GetWindowLong(self.hw, win32con.GWL_EXSTYLE)
+                exstyle |= win32con.WS_EX_LAYERED | win32con.WS_EX_TRANSPARENT | win32con.WS_EX_TOOLWINDOW
+                # custom NOACTIVATE constant used previously: 0x08000000
+                exstyle |= 0x08000000
+                win32gui.SetWindowLong(self.hw, win32con.GWL_EXSTYLE, exstyle)
+                color_key = win32api.RGB(0, 0, 0)
+                win32gui.SetLayeredWindowAttributes(self.hw, color_key, 0, win32con.LWA_COLORKEY)
+            except Exception:
+                logging.exception("Failed to set extended window styles for toolbar")
+        # On Linux, just keep it topmost
         # ensure it stays topmost occasionally
         self.root.after(2000, self._keep_always_on_top)
 
     def _keep_always_on_top(self):
         try:
-            if win32gui and win32con:
+            if os.name == "nt" and win32gui and win32con:
                 win32gui.SetWindowPos(
                     self.hw,
                     win32con.HWND_TOPMOST,
@@ -342,21 +426,20 @@ class ScreenshotApp:
                     0,
                     win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_NOACTIVATE,
                 )
+            else:
+                # On Linux, use Tkinter's attributes
+                self.root.attributes("-topmost", True)
         except Exception:
             pass
         self.root.after(2000, self._keep_always_on_top)
 
-    def _update_label(self, text: str):
-        """Update the floating label text and resize the window to fit."""
+    def _update_status(self, text: str):
+        """Update the status label text."""
         def do_update():
-            self._label.config(text=text)
-            self.root.update_idletasks()
-            w = min(self._label.winfo_reqwidth() + 8, 800)
-            h = self._label.winfo_reqheight() + 4
-            # wrap if too wide
-            if w >= 800:
-                self._label.config(wraplength=780)
-            self.root.geometry(f"{w}x{h}+10+10")
+            self._status_label.config(text=text[:30])  # Limit length
+            # Update button states
+            self._btn_send.config(state="normal" if self.state["screenshot_loaded"] and not self.state["sending"] else "disabled")
+            self._btn_screenshot.config(state="normal" if not self.state["selecting_area"] and not self.state["sending"] else "disabled")
         self.root.after(0, do_update)
 
     # ---------- API key handling ----------
@@ -417,26 +500,34 @@ class ScreenshotApp:
 
     # ---------- Screenshot flow ----------
     def start_area_selection(self):
-        if self.state["selecting_area"] or self.state["sending"] or self.state["response_shown"]:
+        if self.state["selecting_area"] or self.state["sending"]:
             return
+        # Reset state if we have a result shown
+        if self.state["response_shown"]:
+            self._reset_state()
         self.state["selecting_area"] = True
-        self._update_label("Click and drag to select area (ESC to cancel)")
+        self._update_status("Select area...")
         # create the selector after a short delay so UI updates
         self.root.after(50, lambda: InvisibleScreenshotSelector(self.root, self._on_selection_complete))
 
     def _on_selection_complete(self, final_coords: Optional[Tuple[int, int, int, int]]):
         self.state["selecting_area"] = False
         if not final_coords:
-            self._update_label("(ALT+T) screenshot | (ALT+ENTER) send | (ALT+R) reset API key")
+            self._update_status("Ready")
             return
         x1, y1, x2, y2 = final_coords
         # ensure clamping to screen size (best-effort)
         try:
-            sw_logical = win32api.GetSystemMetrics(0)
-            sh_logical = win32api.GetSystemMetrics(1)
-            scale = get_system_scale_factor()
-            screen_w = int(round(sw_logical * scale))
-            screen_h = int(round(sh_logical * scale))
+            if os.name == "nt" and win32api:
+                sw_logical = win32api.GetSystemMetrics(0)
+                sh_logical = win32api.GetSystemMetrics(1)
+                scale = get_system_scale_factor()
+                screen_w = int(round(sw_logical * scale))
+                screen_h = int(round(sh_logical * scale))
+            else:
+                # Linux: use Tkinter to get screen size
+                screen_w = self.root.winfo_screenwidth()
+                screen_h = self.root.winfo_screenheight()
         except Exception:
             screen_w, screen_h = x2 + 10, y2 + 10
 
@@ -457,18 +548,18 @@ class ScreenshotApp:
             self.state["screenshot_path"] = str(self.temp_path)
             self.state["screenshot_loaded"] = True
             width, height = abs(x2 - x1), abs(y2 - y1)
-            self._update_label(f"Screenshot ready ({width}x{height})\n(ALT+T) screenshot | (ALT+ENTER) send | (ALT+R) reset API key")
+            self._update_status(f"Ready ({width}x{height})")
         except Exception as ex:
             logging.exception("Screenshot failed")
             self.state["screenshot_loaded"] = False
-            self._update_label(f"Screenshot error: {ex}\n(ALT+T) to try again")
+            self._update_status(f"Error: {str(ex)[:20]}")
 
     # ---------- OpenAI sending ----------
     def send_current_screenshot(self):
         if self.state["sending"] or self.state["selecting_area"]:
             return
         if not self.state["screenshot_loaded"] or not self.state.get("screenshot_path"):
-            self._update_label("(ALT+T) screenshot | (ALT+ENTER) send | (ALT+R) reset API key")
+            self._update_status("No screenshot")
             return
 
         if not self.ensure_client():
@@ -480,75 +571,87 @@ class ScreenshotApp:
 
     def _send_to_openai_thread(self):
         self.state["sending"] = True
-        self._update_label("Bitte warten...")
+        self._update_status("Processing...")
         try:
             with open(self.state["screenshot_path"], "rb") as f:
                 b64 = base64.b64encode(f.read()).decode("utf-8")
-            # Build request payload to match your earlier form
-            response = self.client.responses.create(
+            # Use correct OpenAI Chat Completions API with vision support
+            response = self.client.chat.completions.create(
                 model=MODEL_NAME,
-                input=[
+                messages=[
                     {
                         "role": "user",
                         "content": [
-                            {"type": "input_text", "text": PROMPT_TEXT},
-                            {"type": "input_image", "image_url": f"data:image/png;base64,{b64}"},
+                            {"type": "text", "text": PROMPT_TEXT},
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": f"data:image/png;base64,{b64}"},
+                            },
                         ],
                     }
                 ],
+                max_tokens=300,
             )
-            # Extract output text if available
-            result_text = getattr(response, "output_text", None)
-            if not result_text:
-                # Try to stringify response or look into structure
-                result_text = str(response)
-            result_text = result_text.strip()
+            # Extract response text
+            result_text = response.choices[0].message.content.strip()
             self.state["response_text"] = result_text
             self.state["response_shown"] = True
-            self._update_label(f"{result_text}\n\n(ALT+ENTER) continue")
+            # Show result in status (truncated if too long)
+            display_text = result_text[:25] + "..." if len(result_text) > 25 else result_text
+            self._update_status(display_text)
+            # Also show in a small popup that auto-closes
+            self._show_result_popup(result_text)
         except Exception as ex:
             logging.exception("OpenAI request failed")
             self.state["response_text"] = None
             self.state["response_shown"] = True
-            self._update_label(f"❌ Error: {ex}\n(ALT+ENTER) continue")
+            error_msg = str(ex)[:25]
+            self._update_status(f"Error: {error_msg}")
         finally:
             self.state["sending"] = False
 
-    # ---------- Hotkey handlers ----------
-    def on_enter_pressed(self):
-        if self.state["sending"] or self.state["selecting_area"]:
-            return
-        if self.state["screenshot_loaded"] and not self.state["response_shown"]:
-            self.send_current_screenshot()
-            return
-        if self.state["response_shown"]:
-            # reset UI state
-            self.state.update(
-                {
-                    "screenshot_path": None,
-                    "screenshot_loaded": False,
-                    "response_text": None,
-                    "response_shown": False,
-                    "sending": False,
-                }
-            )
-            self._update_label("(ALT+T) screenshot | (ALT+ENTER) send | (ALT+R) reset API key")
+    def _show_result_popup(self, text: str):
+        """Show result in a small, unobtrusive popup window."""
+        popup = tk.Toplevel(self.root)
+        popup.overrideredirect(True)
+        popup.attributes("-topmost", True)
+        popup.configure(bg="#1a1a1a")
+        
+        # Position near the main window
+        popup.geometry("250x60+5+35")
+        
+        label = tk.Label(
+            popup,
+            text=text,
+            fg="#4a4a4a",  # Slightly more visible than main UI
+            bg="#1a1a1a",
+            font=("Arial", 8),
+            wraplength=240,
+            justify="left",
+        )
+        label.pack(fill="both", expand=True, padx=5, pady=5)
+        
+        # Auto-close after 5 seconds
+        popup.after(5000, popup.destroy)
+        
+        # Also allow clicking to close
+        popup.bind("<Button-1>", lambda e: popup.destroy())
+        label.bind("<Button-1>", lambda e: popup.destroy())
 
-    def _register_hotkeys(self):
-        try:
-            keyboard.add_hotkey(HOTKEYS["capture"], lambda: self.root.after(0, self.start_area_selection))
-            keyboard.add_hotkey(HOTKEYS["send"], lambda: self.root.after(0, self.on_enter_pressed))
-            keyboard.add_hotkey(HOTKEYS["reset"], lambda: self.root.after(0, self.reset_api_key))
-            keyboard.add_hotkey(HOTKEYS["quit"], lambda: (keyboard.unhook_all_hotkeys(), self._cleanup_and_quit()))
-        except Exception as e:
-            self._update_label(f"Keyboard hook error: {e}\nRun as admin if needed.")
-            logging.exception("Failed to register hotkeys")
+    def _reset_state(self):
+        """Reset UI state after showing result."""
+        self.state.update(
+            {
+                "screenshot_path": None,
+                "screenshot_loaded": False,
+                "response_text": None,
+                "response_shown": False,
+                "sending": False,
+            }
+        )
+        self._update_status("Ready")
 
     def _cleanup_and_quit(self):
-        try:
-            keyboard.unhook_all_hotkeys()
-        except Exception:
-            pass
         try:
             self.root.quit()
             self.root.destroy()
@@ -559,13 +662,7 @@ class ScreenshotApp:
 
     # ---------- Run ----------
     def run(self):
-        try:
-            self.root.mainloop()
-        finally:
-            try:
-                keyboard.unhook_all_hotkeys()
-            except Exception:
-                pass
+        self.root.mainloop()
 
 
 # -----------------------

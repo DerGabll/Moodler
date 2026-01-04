@@ -88,13 +88,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(mes
 # Utilities
 # -----------------------
 def appdata_config_path() -> Path:
-    """Return path to config file (cross-platform)."""
-    if os.name == "nt":  # Windows
-        appdata = os.getenv("APPDATA") or str(Path.home() / "AppData" / "Roaming")
-        config_dir = Path(appdata) / APP_NAME
-    else:  # Linux/macOS
-        xdg_config = os.getenv("XDG_CONFIG_HOME") or str(Path.home() / ".config")
-        config_dir = Path(xdg_config) / APP_NAME
+    """Return path to config file (Windows-only)."""
+    appdata = os.getenv("APPDATA") or str(Path.home() / "AppData" / "Roaming")
+    config_dir = Path(appdata) / APP_NAME
     config_dir.mkdir(parents=True, exist_ok=True)
     return config_dir / "config.json"
 
@@ -144,7 +140,7 @@ def looks_like_api_key(k: Optional[str]) -> bool:
 # -----------------------
 def ensure_process_dpi_awareness() -> None:
     """Try to set process DPI awareness for better high-DPI behavior on Windows."""
-    if os.name != "nt" or ctypes is None:
+    if ctypes is None:
         return
     try:
         # Windows 8.1+ API
@@ -174,7 +170,6 @@ def ensure_process_dpi_awareness() -> None:
 
 def get_system_scale_factor(hwnd: Optional[int] = None) -> float:
     """Return DPI scale factor (1.0 = 100%, 1.25 = 125%, etc)."""
-    # On Linux, Tkinter handles scaling automatically, so return 1.0
     # On Windows, this would need proper DPI detection
     return 1.0
 
@@ -281,7 +276,7 @@ class InvisibleScreenshotSelector:
             if not self._win.winfo_exists():
                 return
             # Windows-specific: use win32 to bring to top
-            if os.name == "nt" and win32gui and win32con:
+            if win32gui and win32con:
                 hwnd = self._win.winfo_id()
                 try:
                     win32gui.BringWindowToTop(hwnd)
@@ -296,9 +291,6 @@ class InvisibleScreenshotSelector:
                     )
                 except Exception:
                     pass
-            else:
-                # Linux: use Tkinter attributes
-                self._win.attributes("-topmost", True)
             self._win.after(50, self._keep_on_top)
         except Exception:
             pass
@@ -432,7 +424,7 @@ class ScreenshotApp:
     # ---------- Window helpers ----------
     def _apply_transparency(self):
         """Apply transparency to the window background."""
-        if os.name == "nt" and win32gui and win32con and win32api:
+        if win32gui and win32con and win32api:
             # Windows: use color key transparency
             try:
                 exstyle = win32gui.GetWindowLong(self.hw, win32con.GWL_EXSTYLE)
@@ -444,27 +436,11 @@ class ScreenshotApp:
             except Exception as ex:
                 logging.exception("Failed to apply transparency on Windows")
                 print(f"ERROR: Failed to apply transparency on Windows: {ex}", flush=True)
-        else:
-            # Linux: Use a compositor-friendly approach
-            # Try to set the window to support transparency through the compositor
-            try:
-                # Set window attributes that compositors recognize for transparency
-                # The transparent color (#010101) will be handled by the compositor
-                # if it supports per-pixel transparency
-                self.root.attributes("-alpha", 0.99)  # Slight transparency hint
-                # Some compositors will make the specific color transparent
-                # This works best with compositors like picom, compton, or KWin
-            except Exception:
-                # If alpha doesn't work, try without it - compositor may handle color key
-                try:
-                    self.root.attributes("-alpha", 1.0)
-                except Exception:
-                    logging.exception("Failed to apply transparency on Linux")
 
     def _apply_window_exstyle(self):
         """Set extended window styles for the toolbar with transparent background (but clickable)."""
         # Windows-specific window styling
-        if os.name == "nt" and win32gui and win32con and win32api:
+        if win32gui and win32con and win32api:
             try:
                 exstyle = win32gui.GetWindowLong(self.hw, win32con.GWL_EXSTYLE)
                 # Use WS_EX_LAYERED for transparency, but NOT WS_EX_TRANSPARENT (which makes clicks pass through)
@@ -484,7 +460,7 @@ class ScreenshotApp:
 
     def _keep_always_on_top(self):
         try:
-            if os.name == "nt" and win32gui and win32con:
+            if win32gui and win32con:
                 win32gui.SetWindowPos(
                     self.hw,
                     win32con.HWND_TOPMOST,
@@ -494,9 +470,6 @@ class ScreenshotApp:
                     0,
                     win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_NOACTIVATE,
                 )
-            else:
-                # On Linux, use Tkinter's attributes
-                self.root.attributes("-topmost", True)
         except Exception:
             pass
         self.root.after(2000, self._keep_always_on_top)
@@ -512,8 +485,8 @@ class ScreenshotApp:
                 # Don't use wraplength - keep text on single line to prevent vertical expansion
                 # Update label with text and font BEFORE changing geometry
                 self._status_label.config(
-                    text=text,
-                    font=("Arial", 10),
+                    text=text, 
+                    font=("Arial", 10), 
                     fg="#2a2a2a",
                     wraplength=0,  # No wrapping - single line only
                     anchor="w",
@@ -533,8 +506,8 @@ class ScreenshotApp:
             else:
                 # Normal status with smaller font
                 self._status_label.config(
-                    text=text[:30] if text else "Ready",
-                    font=("Arial", 7),
+                    text=text[:30] if text else "Ready", 
+                    font=("Arial", 7), 
                     fg="#2a2a2a",
                     wraplength=0,  # No wrapping for short text
                     anchor="w"
@@ -631,14 +604,13 @@ class ScreenshotApp:
         x1, y1, x2, y2 = final_coords
         # ensure clamping to screen size (best-effort)
         try:
-            if os.name == "nt" and win32api:
+            if win32api:
                 sw_logical = win32api.GetSystemMetrics(0)
                 sh_logical = win32api.GetSystemMetrics(1)
                 scale = get_system_scale_factor()
                 screen_w = int(round(sw_logical * scale))
                 screen_h = int(round(sh_logical * scale))
             else:
-                # Linux: use Tkinter to get screen size
                 screen_w = self.root.winfo_screenwidth()
                 screen_h = self.root.winfo_screenheight()
         except Exception:
@@ -700,7 +672,6 @@ class ScreenshotApp:
                         ],
                     }
                 ],
-                max_tokens=300,
             )
             content = response.choices[0].message.content
             if content:

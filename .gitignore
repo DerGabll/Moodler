@@ -1,1 +1,8 @@
 .env
+
+# Build artifacts
+dist/
+build/
+*.spec
+*.exe
+*.pkg

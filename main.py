@@ -8,8 +8,7 @@ Features:
  - Sends screenshot to OpenAI Chat Completions API with vision support
 """
 
-from __future__ import annotations
-
+from app import MoodlerApp
 import base64
 import json
 import logging

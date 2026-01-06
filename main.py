@@ -79,7 +79,8 @@ QUESTION_TYPE_DETECTION_PROMPT = (
     "- 'no_question': Es ist keine Frage im Bild sichtbar oder das Bild enthält keine Frage\n"
     "- 'incomplete_question': Die Frage ist abgeschnitten, unvollständig oder nicht vollständig lesbar"
 )
-MODEL_NAME = "gpt-5"  # Using GPT-5 which supports vision
+MODEL_NAME = "gpt-5"  # Default model (can be changed in settings)
+AVAILABLE_MODELS = ["gpt-5.2", "gpt-4.1", "gpt-4o", "gpt-4.1-mini", "gpt-4o-mini"]
 TEMP_SCREENSHOT_NAME = "moodler_screenshot.png"
 # Logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
@@ -95,28 +96,62 @@ def appdata_config_path() -> Path:
     return config_dir / "config.json"
 
 
-def load_api_key() -> Optional[str]:
+def load_config() -> dict:
+    """Load configuration from file."""
     cfg = appdata_config_path()
     if not cfg.exists():
-        return None
+        return {}
     try:
         data = json.loads(cfg.read_text(encoding="utf-8"))
-        return data.get("api_key")
+        return data
     except Exception as ex:
         logging.exception("Failed to read config file")
         print(f"ERROR: Failed to read config file: {ex}", flush=True)
-        return None
+        return {}
+
+
+def save_config(config: dict) -> bool:
+    """Save configuration to file."""
+    cfg = appdata_config_path()
+    try:
+        cfg.write_text(json.dumps(config, indent=2), encoding="utf-8")
+        return True
+    except Exception as ex:
+        logging.exception("Failed to save config")
+        print(f"ERROR: Failed to save config: {ex}", flush=True)
+        return False
+
+
+def load_api_key() -> Optional[str]:
+    """Load API key from config file."""
+    data = load_config()
+    return data.get("api_key")
 
 
 def save_api_key(api_key: str) -> bool:
-    cfg = appdata_config_path()
-    try:
-        cfg.write_text(json.dumps({"api_key": api_key}), encoding="utf-8")
-        return True
-    except Exception as ex:
-        logging.exception("Failed to save API key")
-        print(f"ERROR: Failed to save API key: {ex}", flush=True)
+    """Save API key to config file."""
+    data = load_config()
+    data["api_key"] = api_key
+    return save_config(data)
+
+
+def load_model_name() -> str:
+    """Load model name from config file, or return default."""
+    data = load_config()
+    model = data.get("model_name", MODEL_NAME)
+    # Validate that the model is in the available list
+    if model not in AVAILABLE_MODELS:
+        return MODEL_NAME
+    return model
+
+
+def save_model_name(model_name: str) -> bool:
+    """Save model name to config file."""
+    if model_name not in AVAILABLE_MODELS:
         return False
+    data = load_config()
+    data["model_name"] = model_name
+    return save_config(data)
 
 
 def delete_saved_api_key() -> bool:
@@ -313,6 +348,8 @@ class ScreenshotApp:
             "selecting_area": False,
             "multiplier": 1,  # 1x, 2x, 3x, or 4x
         }
+        # Load saved model name
+        self.model_name = load_model_name()
         # Tk root
         self.root = tk.Tk()
         self.root.overrideredirect(True)
@@ -390,6 +427,14 @@ class ScreenshotApp:
             **button_style,
         )
         self._btn_send.pack(side="left", padx=1)
+
+        self._btn_settings = tk.Button(
+            buttons_container,
+            text="⚙",
+            command=self.open_settings,
+            **button_style,
+        )
+        self._btn_settings.pack(side="left", padx=1)
 
         self._btn_reset = tk.Button(
             buttons_container,
@@ -577,6 +622,50 @@ class ScreenshotApp:
         else:
             tmp.destroy()
 
+    def open_settings(self):
+        """Open settings dialog."""
+        if self.state["sending"] or self.state["selecting_area"]:
+            return
+        
+        # Create settings window
+        settings_window = tk.Toplevel(self.root)
+        settings_window.title("Settings")
+        settings_window.geometry("300x150")
+        settings_window.attributes("-topmost", True)
+        settings_window.transient(self.root)
+        settings_window.grab_set()
+        
+        # Center the window
+        settings_window.update_idletasks()
+        x = (settings_window.winfo_screenwidth() // 2) - (settings_window.winfo_width() // 2)
+        y = (settings_window.winfo_screenheight() // 2) - (settings_window.winfo_height() // 2)
+        settings_window.geometry(f"+{x}+{y}")
+        
+        # Model selection
+        tk.Label(settings_window, text="GPT Model:", font=("Arial", 9)).pack(pady=10)
+        
+        model_var = tk.StringVar(value=self.model_name)
+        model_dropdown = tk.OptionMenu(settings_window, model_var, *AVAILABLE_MODELS)
+        model_dropdown.pack(pady=5)
+        model_dropdown.config(width=20)
+        
+        # Buttons
+        button_frame = tk.Frame(settings_window)
+        button_frame.pack(pady=20)
+        
+        def save_settings():
+            new_model = model_var.get()
+            if new_model != self.model_name:
+                if save_model_name(new_model):
+                    self.model_name = new_model
+                    messagebox.showinfo("Settings", f"Model changed to {new_model}.", parent=settings_window)
+                else:
+                    messagebox.showerror("Error", "Failed to save model setting.", parent=settings_window)
+            settings_window.destroy()
+        
+        tk.Button(button_frame, text="Save", command=save_settings, width=10).pack(side="left", padx=5)
+        tk.Button(button_frame, text="Cancel", command=settings_window.destroy, width=10).pack(side="left", padx=5)
+
     # ---------- Multiplier handling ----------
     def _cycle_multiplier(self):
         """Cycle through multiplier options: 1x -> 2x -> 3x -> 4x -> 1x"""
@@ -659,7 +748,7 @@ class ScreenshotApp:
         """Detect the type of question: multiple_choice, true_false, or open_ended."""
         try:
             response = self.client.chat.completions.create(
-                model=MODEL_NAME,
+                model=self.model_name,
                 messages=[
                     {
                         "role": "user",
@@ -721,7 +810,7 @@ class ScreenshotApp:
                 prompt = PROMPT_MULTIPLE_CHOICE  # Default fallback
             
             response = self.client.chat.completions.create(
-                model=MODEL_NAME,
+                model=self.model_name,
                 messages=[
                     {
                         "role": "user",
@@ -791,7 +880,7 @@ class ScreenshotApp:
         
         try:
             response = self.client.chat.completions.create(
-                model=MODEL_NAME,
+                model=self.model_name,
                 messages=[
                     {
                         "role": "user",
@@ -846,7 +935,7 @@ class ScreenshotApp:
             
             if multiplier == 1:
                 # Single request - normal behavior
-                print(f"DEBUG: Sending single request to OpenAI with model: {MODEL_NAME}", flush=True)
+                print(f"DEBUG: Sending single request to OpenAI with model: {self.model_name}", flush=True)
                 result_text = self._send_single_request(b64, question_type)
                 if result_text is None:
                     result_text = "no answer"

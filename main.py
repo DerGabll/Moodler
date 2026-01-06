@@ -79,7 +79,7 @@ QUESTION_TYPE_DETECTION_PROMPT = (
     "- 'no_question': Es ist keine Frage im Bild sichtbar oder das Bild enthält keine Frage\n"
     "- 'incomplete_question': Die Frage ist abgeschnitten, unvollständig oder nicht vollständig lesbar"
 )
-MODEL_NAME = "gpt-5"  # Default model (can be changed in settings)
+MODEL_NAME = "gpt-5.2"
 AVAILABLE_MODELS = ["gpt-5.2", "gpt-4.1", "gpt-4o", "gpt-4.1-mini", "gpt-4o-mini"]
 TEMP_SCREENSHOT_NAME = "moodler_screenshot.png"
 # Logging
@@ -223,13 +223,23 @@ class InvisibleScreenshotSelector:
         self._on_complete = on_complete
         # Create a fullscreen top-level window that is nearly invisible
         self._win = tk.Toplevel(master)
+        # Hide from taskbar immediately before showing
+        self._win.withdraw()
         self._win.attributes("-fullscreen", True)
         # Use black background
         self._win.configure(bg="black")
         self._win.attributes("-topmost", True)
         # Use very low alpha so it's barely visible but still interactive (not 0 to allow clicks)
         self._win.attributes("-alpha", 0.01)
+        # Remove window decorations to help hide from taskbar
+        self._win.overrideredirect(True)
         self._win.update_idletasks()
+        
+        # Hide from taskbar immediately after window creation
+        self._hide_from_taskbar()
+        
+        # Show the window after hiding from taskbar
+        self._win.deiconify()
         # Focus the window so it can receive keyboard events
         self._win.focus_force()
 
@@ -257,6 +267,11 @@ class InvisibleScreenshotSelector:
         self._win.bind("<Escape>", self._cancel)
         self._canvas.bind("<Escape>", self._cancel)
         self._win.bind("<KeyPress-Escape>", self._cancel)
+
+        # Update to ensure window is fully created, then hide from taskbar again (redundant but ensures it sticks)
+        self._win.update_idletasks()
+        # Hide from taskbar again after window is fully shown
+        self._master.after(10, self._hide_from_taskbar)
 
         # make sure selector stays on top
         self._keep_on_top()
@@ -298,6 +313,8 @@ class InvisibleScreenshotSelector:
 
     def _cancel(self, event=None):
         self._final_coords = None
+        # Call the callback with None to properly reset state
+        self._on_complete(None)
         self._destroy()
 
     def _destroy(self):
@@ -305,6 +322,39 @@ class InvisibleScreenshotSelector:
             self._win.destroy()
         except Exception:
             pass
+
+    def _hide_from_taskbar(self):
+        """Hide the selector window from the taskbar."""
+        if win32gui and win32con:
+            try:
+                # Get hwnd again in case it wasn't available earlier
+                hwnd = self._win.winfo_id()
+                if not hwnd:
+                    return
+                
+                # Get current extended window style
+                exstyle = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
+                
+                # Remove WS_EX_APPWINDOW if present (forces taskbar entry)
+                exstyle &= ~win32con.WS_EX_APPWINDOW
+                
+                # Add WS_EX_TOOLWINDOW to hide from taskbar
+                # This makes Windows treat it as a tool window, which doesn't appear in taskbar
+                exstyle |= win32con.WS_EX_TOOLWINDOW
+                
+                # Apply the new extended style
+                win32gui.SetWindowLong(hwnd, win32con.GWL_EXSTYLE, exstyle)
+                
+                # Force window update to apply changes
+                win32gui.SetWindowPos(
+                    hwnd,
+                    win32con.HWND_TOP,
+                    0, 0, 0, 0,
+                    win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_NOZORDER | win32con.SWP_FRAMECHANGED
+                )
+            except Exception as ex:
+                logging.exception("Failed to hide selector from taskbar")
+                print(f"ERROR: Failed to hide selector from taskbar: {ex}", flush=True)
 
     def _keep_on_top(self):
         try:
@@ -350,6 +400,7 @@ class ScreenshotApp:
         }
         # Load saved model name
         self.model_name = load_model_name()
+        print(f"DEBUG: Loaded model on startup: {self.model_name}", flush=True)
         # Tk root
         self.root = tk.Tk()
         self.root.overrideredirect(True)
@@ -357,21 +408,21 @@ class ScreenshotApp:
         # Use a unique color for transparency (will be made transparent)
         self.transparent_color = "#010101"  # Almost black, unique for transparency
         self.root.configure(bg=self.transparent_color)
-        # small toolbar in top-left - minimal size
-        self.root.geometry("200x25+5+5")
+        # small toolbar in top-left - minimal size (2 rows: status + buttons)
+        self.root.geometry("200x50+5+5")
         self.hw = self.root.winfo_id()
 
         # Create a frame for buttons with transparent background
-        self._button_frame = tk.Frame(self.root, bg=self.transparent_color, height=25)
+        self._button_frame = tk.Frame(self.root, bg=self.transparent_color, height=50)
         self._button_frame.pack(fill="x", expand=False, padx=1, pady=1)
         self._button_frame.pack_propagate(False)  # Prevent frame from resizing based on content
         
-        # Use grid layout for better control - buttons stay fixed width
+        # Use grid layout - status in row 0, buttons in row 1
         self._button_frame.columnconfigure(0, weight=1)  # Text area expands
-        self._button_frame.columnconfigure(1, weight=0)  # Buttons fixed width
-        self._button_frame.rowconfigure(0, weight=0, minsize=25)  # Fixed row height
+        self._button_frame.rowconfigure(0, weight=0, minsize=25)  # Status row
+        self._button_frame.rowconfigure(1, weight=0, minsize=25)  # Buttons row
 
-        # Status label (very small, dark, transparent background) - in grid column 0
+        # Status label (very small, dark, transparent background) - in row 0
         self._status_label = tk.Label(
             self._button_frame,
             text="Ready",
@@ -384,9 +435,9 @@ class ScreenshotApp:
         )
         self._status_label.grid(row=0, column=0, sticky="ew", padx=2)
 
-        # Buttons frame - fixed on the right side in grid column 1
+        # Buttons frame - in row 1, left-aligned
         buttons_container = tk.Frame(self._button_frame, bg=self.transparent_color)
-        buttons_container.grid(row=0, column=1, sticky="e", padx=1)
+        buttons_container.grid(row=1, column=0, sticky="w", padx=1)
         # Store reference for later use
         self._buttons_container = buttons_container
 
@@ -525,8 +576,8 @@ class ScreenshotApp:
         def do_update():
             print(f"DEBUG: do_update executing, is_response={is_response}, text='{text}', text bool: {bool(text)}", flush=True)
             if is_response and text:
-                # Calculate width needed (buttons take ~80px, add padding)
-                text_width = min(max(len(text) * 6 + 80, 200), 400)  # Min 200px, max 400px
+                # Calculate width needed (no need to account for buttons, they're on separate line)
+                text_width = min(max(len(text) * 6 + 20, 200), 600)  # Min 200px, max 600px
                 # Don't use wraplength - keep text on single line to prevent vertical expansion
                 # Update label with text and font BEFORE changing geometry
                 self._status_label.config(
@@ -540,25 +591,24 @@ class ScreenshotApp:
                 )
                 # Force label update
                 self._status_label.update_idletasks()
-                # Then expand window to fit more text (buttons stay fixed on right via grid)
-                # Explicitly set height to 25 to prevent vertical expansion
-                self.root.geometry(f"{text_width}x25+5+5")
+                # Then expand window to fit more text (buttons are on separate line, so no constraint)
+                # Height is 50px for two rows (status + buttons)
+                self.root.geometry(f"{text_width}x50+5+5")
                 # Ensure the button frame doesn't expand vertically
-                self._button_frame.config(height=25)
+                self._button_frame.config(height=50)
                 # Force window update to ensure text is visible and buttons stay in place
-                # Grid layout ensures buttons stay fixed in column 1
                 self.root.update_idletasks()
             else:
-                # Normal status with smaller font
+                # Normal status with smaller font - no truncation needed since buttons are on separate line
                 self._status_label.config(
-                    text=text[:30] if text else "Ready", 
+                    text=text if text else "Ready", 
                     font=("Arial", 7), 
                     fg="#2a2a2a",
                     wraplength=0,  # No wrapping for short text
                     anchor="w"
                 )
-                # Reset to default size
-                self.root.geometry("200x25+5+5")
+                # Reset to default size (50px height for two rows)
+                self.root.geometry("200x50+5+5")
                 self.root.update_idletasks()
             # Update button states - allow screenshot button even after response is shown
             self._btn_send.config(state="normal" if self.state["screenshot_loaded"] and not self.state["sending"] else "disabled")
@@ -658,9 +708,12 @@ class ScreenshotApp:
             if new_model != self.model_name:
                 if save_model_name(new_model):
                     self.model_name = new_model
+                    print(f"DEBUG: Model changed to: {self.model_name}", flush=True)
                     messagebox.showinfo("Settings", f"Model changed to {new_model}.", parent=settings_window)
                 else:
                     messagebox.showerror("Error", "Failed to save model setting.", parent=settings_window)
+            else:
+                print(f"DEBUG: Model unchanged: {self.model_name}", flush=True)
             settings_window.destroy()
         
         tk.Button(button_frame, text="Save", command=save_settings, width=10).pack(side="left", padx=5)
@@ -747,6 +800,7 @@ class ScreenshotApp:
     def _detect_question_type(self, b64: str) -> str:
         """Detect the type of question: multiple_choice, true_false, or open_ended."""
         try:
+            print(f"DEBUG: Detecting question type using model: {self.model_name}", flush=True)
             response = self.client.chat.completions.create(
                 model=self.model_name,
                 messages=[
@@ -809,6 +863,7 @@ class ScreenshotApp:
             else:
                 prompt = PROMPT_MULTIPLE_CHOICE  # Default fallback
             
+            print(f"DEBUG: Sending single request using model: {self.model_name} (question_type: {question_type})", flush=True)
             response = self.client.chat.completions.create(
                 model=self.model_name,
                 messages=[
@@ -879,6 +934,7 @@ class ScreenshotApp:
                 )
         
         try:
+            print(f"DEBUG: Comparing answers using model: {self.model_name}", flush=True)
             response = self.client.chat.completions.create(
                 model=self.model_name,
                 messages=[
@@ -904,6 +960,7 @@ class ScreenshotApp:
 
     def _send_to_openai_thread(self):
         print("DEBUG: _send_to_openai_thread started", flush=True)
+        print(f"DEBUG: Using model: {self.model_name}", flush=True)
         self.state["sending"] = True
         multiplier = self.state["multiplier"]
         self._update_status(f"Processing ({multiplier}x)...")
@@ -935,7 +992,6 @@ class ScreenshotApp:
             
             if multiplier == 1:
                 # Single request - normal behavior
-                print(f"DEBUG: Sending single request to OpenAI with model: {self.model_name}", flush=True)
                 result_text = self._send_single_request(b64, question_type)
                 if result_text is None:
                     result_text = "no answer"

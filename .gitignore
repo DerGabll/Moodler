@@ -6,8 +6,6 @@ __pycache__/
 *.pyo
 *.pyd
 
-images/
-
 # Build artifacts
 dist/
 build/

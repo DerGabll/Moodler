@@ -356,6 +356,7 @@ class InvisibleScreenshotSelector:
                 logging.exception("Failed to hide selector from taskbar")
                 print(f"ERROR: Failed to hide selector from taskbar: {ex}", flush=True)
 
+                
     def _keep_on_top(self):
         try:
             if not self._win.winfo_exists():

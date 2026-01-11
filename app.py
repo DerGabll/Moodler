@@ -1,4 +1,5 @@
 from PyQt6.QtWidgets import QPushButton, QMainWindow, QLabel, QVBoxLayout, QWidget, QApplication
+from PyQt6.QtCore import Qt
 import sys
 
 class MainWindow(QMainWindow):
@@ -6,23 +7,32 @@ class MainWindow(QMainWindow):
         super().__init__()
 
         self.setFixedSize(100, 100)
+        
+        # position top left and change size
+        self.setGeometry(0, 0, 700, 700)
+        # No title bar
+        self.setWindowFlag(Qt.WindowType.FramelessWindowHint )
+        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
-        #Create the buttons for the window layout
-        self.btn_mult = QPushButton("A")
-        self.btn_screenshot = QPushButton("B")
-        self.btn_send = QPushButton("C")
-        self.btn_exit = QPushButton("D")
-
+        # Creating Widgets
+        self.button_lst = [
+            QPushButton("A"),
+            QPushButton("B"),
+            QPushButton("C"),
+            QPushButton("D")
+        ]
         self.label = QLabel("Test Text")
-        self.setGeometry(100,1000, 700,700)
 
         layout = QVBoxLayout()
-        layout.addWidget(self.btn_mult)
-        layout.addWidget(self.btn_screenshot)
-        layout.addWidget(self.btn_send)
-        layout.addWidget(self.btn_exit)
+
+        #Adding Widgets to layout
         layout.addWidget(self.label)
 
+        for button in self.button_lst:
+            button.setStyleSheet("background-color: rgb(32, 32, 32); color: rgb(100, 100, 100)")
+            layout.addWidget(button)
+        
         container = QWidget()
         container.setLayout(layout)
 
